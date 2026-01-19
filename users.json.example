@@ -1,0 +1,5 @@
+{
+  "nathan": {"password": "changeme", "api_key": ""},
+  "reviewer1": {"password": "changeme", "api_key": ""},
+  "reviewer2": {"password": "changeme", "api_key": ""}
+}

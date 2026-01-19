@@ -1,0 +1,1530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEMF Photo Review</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #1a1a2e;
+            color: #eee;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 420px;
+            grid-template-rows: auto 1fr;
+            height: 100vh;
+            gap: 10px;
+            padding: 10px;
+        }
+        header {
+            grid-column: 1 / -1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #16213e;
+            padding: 10px 20px;
+            border-radius: 8px;
+        }
+        .progress {
+            display: flex;
+            gap: 20px;
+            font-size: 14px;
+        }
+        .progress span { color: #888; }
+        .progress .count { color: #4ecca3; font-weight: bold; }
+        .image-panel {
+            background: #0f0f23;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .image-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 10px;
+            overflow: hidden;
+            cursor: zoom-in;
+        }
+        .image-container img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            border-radius: 4px;
+        }
+        .adjacent-strip {
+            background: #16213e;
+            padding: 10px;
+        }
+        .adjacent-strip-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 12px;
+            color: #888;
+        }
+        .adjacent-images {
+            display: flex;
+            gap: 5px;
+            overflow-x: auto;
+        }
+        .adjacent-thumb {
+            position: relative;
+            flex-shrink: 0;
+        }
+        .adjacent-thumb img {
+            height: 60px;
+            width: 80px;
+            object-fit: cover;
+            border-radius: 4px;
+            cursor: pointer;
+            opacity: 0.6;
+            transition: opacity 0.2s;
+        }
+        .adjacent-thumb img:hover { opacity: 1; }
+        .adjacent-thumb.current img {
+            opacity: 1;
+            border: 2px solid #4ecca3;
+        }
+        .adjacent-thumb.peeking img {
+            opacity: 1;
+            border: 2px solid #feca57;
+        }
+        .adjacent-thumb .link-btn {
+            position: absolute;
+            bottom: 2px;
+            right: 2px;
+            background: #4ecca3;
+            color: #000;
+            border: none;
+            border-radius: 3px;
+            font-size: 10px;
+            padding: 2px 5px;
+            cursor: pointer;
+            display: none;
+        }
+        .adjacent-thumb:hover .link-btn,
+        .adjacent-thumb.peeking .link-btn {
+            display: block;
+        }
+        .adjacent-thumb .thumb-code {
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            background: rgba(0,0,0,0.7);
+            color: #fff;
+            font-size: 9px;
+            padding: 1px 4px;
+            border-radius: 2px;
+            max-width: 75px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .data-panel {
+            background: #16213e;
+            border-radius: 8px;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .section {
+            background: #1a1a2e;
+            border-radius: 6px;
+            padding: 15px;
+        }
+        .section h3 {
+            margin: 0 0 10px 0;
+            font-size: 12px;
+            text-transform: uppercase;
+            color: #888;
+            letter-spacing: 1px;
+        }
+        .field {
+            margin-bottom: 12px;
+        }
+        .field label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            color: #888;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+        }
+        .field .value {
+            font-size: 14px;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .field .value.missing { color: #ff6b6b; font-style: italic; }
+        .field .value.low-confidence { color: #feca57; }
+        .field input, .field select {
+            width: 100%;
+            padding: 8px 10px;
+            border: 1px solid #333;
+            border-radius: 4px;
+            background: #0f0f23;
+            color: #fff;
+            font-size: 14px;
+        }
+        .field input:focus, .field select:focus {
+            outline: none;
+            border-color: #4ecca3;
+        }
+        .match-indicator {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        .match-exact {
+            background: #4ecca3;
+            color: #000;
+        }
+        .match-partial {
+            background: #feca57;
+            color: #000;
+        }
+        .match-none {
+            background: #ff6b6b;
+            color: #fff;
+        }
+        .existing-obs {
+            background: #2d3436;
+            padding: 8px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .existing-obs a { color: #74b9ff; }
+        .actions {
+            display: flex;
+            gap: 10px;
+            margin-top: auto;
+            padding-top: 15px;
+        }
+        button {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: transform 0.1s, opacity 0.1s;
+        }
+        button:hover { opacity: 0.9; }
+        button:active { transform: scale(0.98); }
+        .btn-approve { background: #4ecca3; color: #000; }
+        .btn-discard { background: #ff6b6b; color: #fff; }
+        .btn-skip { background: #555; color: #fff; }
+        .nav-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .btn-nav {
+            background: #333;
+            color: #fff;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            text-transform: uppercase;
+            font-weight: bold;
+        }
+        .status-approved { background: #4ecca3; color: #000; }
+        .status-corrected { background: #feca57; color: #000; }
+        .status-discarded { background: #ff6b6b; color: #fff; }
+        .keyboard-hint {
+            font-size: 10px;
+            color: #666;
+            margin-left: 5px;
+        }
+        /* Zoom modal */
+        .zoom-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.95);
+            z-index: 1000;
+            cursor: zoom-out;
+            overflow: auto;
+        }
+        .zoom-modal.active { display: flex; align-items: center; justify-content: center; }
+        .zoom-modal img {
+            max-width: 95vw;
+            max-height: 95vh;
+            object-fit: contain;
+        }
+        .zoom-label {
+            position: fixed;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.8);
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        /* Peek panel for viewing adjacent image details */
+        .peek-panel {
+            display: none;
+            background: #2d3436;
+            border-radius: 6px;
+            padding: 10px;
+            margin-top: 10px;
+            border: 2px solid #feca57;
+        }
+        .peek-panel.active { display: block; }
+        .peek-panel h4 {
+            margin: 0 0 8px 0;
+            color: #feca57;
+            font-size: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .peek-panel .peek-data {
+            font-size: 13px;
+        }
+        .peek-panel .peek-data div {
+            margin: 4px 0;
+        }
+        .peek-panel .peek-actions {
+            margin-top: 10px;
+            display: flex;
+            gap: 8px;
+        }
+        .peek-panel button {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+        .btn-link { background: #4ecca3; color: #000; }
+        .btn-close-peek { background: #555; color: #fff; flex: 0; padding: 6px 10px; }
+        /* Shortcuts modal */
+        .shortcuts-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .shortcuts-modal.active { display: flex; }
+        .shortcuts-content {
+            background: #16213e;
+            padding: 30px;
+            border-radius: 12px;
+            max-width: 500px;
+        }
+        .shortcuts-content h2 { margin-top: 0; }
+        .shortcut-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #333;
+        }
+        .shortcut-key {
+            background: #333;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+        /* Jump modal */
+        .jump-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .jump-modal.active { display: flex; }
+        .jump-content {
+            background: #16213e;
+            padding: 20px;
+            border-radius: 12px;
+            width: 400px;
+        }
+        .jump-content input {
+            width: 100%;
+            padding: 10px;
+            font-size: 16px;
+            border: 1px solid #333;
+            border-radius: 4px;
+            background: #0f0f23;
+            color: #fff;
+        }
+        .candidate {
+            padding: 8px 10px;
+            background: #2d3436;
+            border-radius: 3px;
+            margin: 4px 0;
+            cursor: pointer;
+        }
+        .candidate:hover {
+            background: #4ecca3;
+            color: #000;
+        }
+        /* Autocomplete dropdown */
+        .autocomplete-wrapper {
+            position: relative;
+        }
+        .autocomplete-dropdown {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: #1a1a2e;
+            border: 1px solid #4ecca3;
+            border-top: none;
+            border-radius: 0 0 4px 4px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 100;
+        }
+        .autocomplete-dropdown.active { display: block; }
+        .autocomplete-item {
+            padding: 8px 10px;
+            cursor: pointer;
+            font-size: 13px;
+            border-bottom: 1px solid #333;
+        }
+        .autocomplete-item:last-child { border-bottom: none; }
+        .autocomplete-item:hover, .autocomplete-item.selected {
+            background: #4ecca3;
+            color: #000;
+        }
+        .autocomplete-item .match-type {
+            font-size: 10px;
+            padding: 2px 5px;
+            border-radius: 3px;
+            margin-left: 8px;
+        }
+        .autocomplete-item .match-type.exact { background: #4ecca3; color: #000; }
+        .autocomplete-item .match-type.partial { background: #feca57; color: #000; }
+        .autocomplete-item .match-type.candidate { background: #74b9ff; color: #000; }
+        /* Field verification indicator */
+        .field-status {
+            display: inline-block;
+            margin-left: 8px;
+            font-size: 11px;
+        }
+        .field-status.verifying { color: #feca57; }
+        .field-status.verified { color: #4ecca3; }
+        .field-status.unverified { color: #ff6b6b; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div>
+                <strong>NEMF Photo Review</strong>
+                <span id="currentFilename" style="margin-left: 15px; color: #888;"></span>
+                <span id="claimStatus" style="margin-left: 10px;"></span>
+            </div>
+            <div class="progress">
+                <span>Total: <span class="count" id="totalCount">0</span></span>
+                <span>Reviewed: <span class="count" id="reviewedCount">0</span></span>
+                <span>Approved: <span class="count" id="approvedCount">0</span></span>
+                <span>Discarded: <span class="count" id="discardedCount">0</span></span>
+                <span>Position: <span class="count" id="positionInfo">0/0</span></span>
+                <span style="margin-left: 20px;">User: <span class="count" id="currentUser">-</span></span>
+            </div>
+            <div style="display: flex; gap: 15px; font-size: 12px;">
+                <a href="https://mushroomobserver.org/checklist?project_id=389" target="_blank" style="color: #74b9ff;">Project Checklist</a>
+                <a href="#" onclick="showSettings(); return false;" style="color: #74b9ff;">Settings</a>
+            </div>
+        </header>
+
+        <div class="image-panel">
+            <div class="image-container" onclick="zoomImage()">
+                <img id="mainImage" src="" alt="Review image">
+            </div>
+            <div class="adjacent-strip">
+                <div class="adjacent-strip-header">
+                    <span>Adjacent Images (click to peek, use "Link" to copy field data)</span>
+                    <span id="peekingIndicator" style="color: #feca57; display: none;">👁 Peeking</span>
+                </div>
+                <div class="adjacent-images" id="adjacentImages"></div>
+            </div>
+        </div>
+
+        <div class="data-panel">
+            <div class="section">
+                <h3>Extracted Data</h3>
+                <div class="field">
+                    <label>Field Slip Code</label>
+                    <div class="value">
+                        <span id="sourceFieldCode">-</span>
+                        <a id="fieldSlipLink" href="#" target="_blank" style="color: #74b9ff; font-size: 12px; margin-left: 10px; display: none;">View on MO</a>
+                    </div>
+                </div>
+                <div class="field">
+                    <label>Date</label>
+                    <div class="value" id="sourceDate">-</div>
+                </div>
+                <div class="field">
+                    <label>
+                        Location
+                        <span class="match-indicator" id="locationMatchIndicator" title=""></span>
+                    </label>
+                    <div class="value" id="sourceLocation">-</div>
+                </div>
+                <div class="field">
+                    <label>
+                        ID (Name)
+                        <span class="match-indicator" id="nameMatchIndicator" title=""></span>
+                    </label>
+                    <div class="value" id="sourceName">-</div>
+                </div>
+                <div class="field">
+                    <label>Notes</label>
+                    <div class="value" id="sourceNotes" style="font-size: 12px; color: #888;">-</div>
+                </div>
+                <div id="existingObsContainer" style="display: none;">
+                    <label style="font-size: 11px; color: #888; text-transform: uppercase;">Existing MO Observation</label>
+                    <div class="existing-obs" id="existingObs"></div>
+                </div>
+
+                <!-- Peek panel for adjacent image -->
+                <div class="peek-panel" id="peekPanel">
+                    <h4>
+                        <span>Peeking: <span id="peekFilename"></span></span>
+                        <button class="btn-close-peek" onclick="closePeek()">✕</button>
+                    </h4>
+                    <div class="peek-data">
+                        <div><strong>Field Code:</strong> <span id="peekFieldCode">-</span></div>
+                        <div><strong>Date:</strong> <span id="peekDate">-</span></div>
+                        <div><strong>Location:</strong> <span id="peekLocation">-</span></div>
+                        <div><strong>ID:</strong> <span id="peekName">-</span></div>
+                    </div>
+                    <div class="peek-actions">
+                        <button class="btn-link" onclick="linkFromPeek()">
+                            Link Data to Current Image
+                        </button>
+                        <button class="btn-nav" onclick="switchToPeek()">
+                            Switch to This Image
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Review / Corrections <span id="statusBadge"></span></h3>
+                <div class="field">
+                    <label>Field Slip Code <span class="keyboard-hint">[f]</span></label>
+                    <input type="text" id="reviewFieldCode" placeholder="NEMF-XXXXX">
+                </div>
+                <div class="field">
+                    <label>Date <span class="keyboard-hint">[1-5]</span></label>
+                    <select id="reviewDate">
+                        <option value="">-- Select date --</option>
+                        <option value="2025-09-17">2025-09-17 (Wed)</option>
+                        <option value="2025-09-18">2025-09-18 (Thu)</option>
+                        <option value="2025-09-19">2025-09-19 (Fri)</option>
+                        <option value="2025-09-20">2025-09-20 (Sat)</option>
+                        <option value="2025-09-21">2025-09-21 (Sun)</option>
+                        <option value="other">Other...</option>
+                    </select>
+                    <input type="date" id="reviewDateCustom" style="display: none; margin-top: 5px;">
+                </div>
+                <div class="field">
+                    <label>
+                        Location
+                        <span class="field-status" id="locationStatus"></span>
+                    </label>
+                    <div class="autocomplete-wrapper">
+                        <input type="text" id="reviewLocation" placeholder="Start typing..." autocomplete="off">
+                        <div class="autocomplete-dropdown" id="locationDropdown"></div>
+                    </div>
+                    <input type="hidden" id="reviewLocationId">
+                </div>
+                <div class="field">
+                    <label>
+                        ID (Name)
+                        <span class="field-status" id="nameStatus"></span>
+                    </label>
+                    <div class="autocomplete-wrapper">
+                        <input type="text" id="reviewName" placeholder="Start typing..." autocomplete="off">
+                        <div class="autocomplete-dropdown" id="nameDropdown"></div>
+                    </div>
+                    <input type="hidden" id="reviewNameId">
+                </div>
+                <div class="field">
+                    <label>Notes</label>
+                    <input type="text" id="reviewNotes" placeholder="Additional notes...">
+                </div>
+                <div class="field" id="linkedImagesField" style="display: none;">
+                    <label>Linked Images</label>
+                    <div id="linkedImagesList" style="font-size: 12px; color: #4ecca3;"></div>
+                </div>
+            </div>
+
+            <div class="actions">
+                <button class="btn-approve" onclick="submitReview('approved')">
+                    Approve <span class="keyboard-hint">[a/Enter]</span>
+                </button>
+                <button class="btn-discard" onclick="submitReview('discarded')">
+                    Discard <span class="keyboard-hint">[d]</span>
+                </button>
+                <button class="btn-skip" onclick="nextImage()">
+                    Skip <span class="keyboard-hint">[s]</span>
+                </button>
+            </div>
+            <div class="nav-buttons">
+                <button class="btn-nav" onclick="prevImage()">← Prev <span class="keyboard-hint">[←/p]</span></button>
+                <button class="btn-nav" onclick="jumpToImage()">Jump <span class="keyboard-hint">[j]</span></button>
+                <button class="btn-nav" onclick="nextImage()">Next → <span class="keyboard-hint">[→/n]</span></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Zoom modal -->
+    <div class="zoom-modal" id="zoomModal" onclick="closeZoom()">
+        <div class="zoom-label" id="zoomLabel"></div>
+        <img id="zoomImage" src="">
+    </div>
+
+    <!-- Keyboard shortcuts modal -->
+    <div class="shortcuts-modal" id="shortcutsModal" onclick="closeShortcuts()">
+        <div class="shortcuts-content" onclick="event.stopPropagation()">
+            <h2>Keyboard Shortcuts</h2>
+            <div class="shortcut-row"><span>Approve</span><span><span class="shortcut-key">a</span> or <span class="shortcut-key">Enter</span></span></div>
+            <div class="shortcut-row"><span>Discard</span><span class="shortcut-key">d</span></div>
+            <div class="shortcut-row"><span>Skip (next)</span><span class="shortcut-key">s</span></div>
+            <div class="shortcut-row"><span>Next image</span><span><span class="shortcut-key">→</span> or <span class="shortcut-key">n</span></span></div>
+            <div class="shortcut-row"><span>Previous image</span><span><span class="shortcut-key">←</span> or <span class="shortcut-key">p</span></span></div>
+            <div class="shortcut-row"><span>Jump to image</span><span class="shortcut-key">j</span></div>
+            <div class="shortcut-row"><span>Focus field code</span><span class="shortcut-key">f</span></div>
+            <div class="shortcut-row"><span>Select date (Wed-Sun)</span><span><span class="shortcut-key">1</span>-<span class="shortcut-key">5</span></span></div>
+            <div class="shortcut-row"><span>Zoom image</span><span class="shortcut-key">z</span></div>
+            <div class="shortcut-row"><span>Show shortcuts</span><span class="shortcut-key">?</span></div>
+            <div class="shortcut-row"><span>Close modal / Cancel peek</span><span class="shortcut-key">Esc</span></div>
+            <p style="margin-top: 20px; color: #888; font-size: 12px;">Click adjacent images to peek at their data without leaving current image.</p>
+        </div>
+    </div>
+
+    <!-- Jump to image modal -->
+    <div class="jump-modal" id="jumpModal">
+        <div class="jump-content">
+            <h3>Jump to Image</h3>
+            <input type="text" id="jumpInput" placeholder="Enter filename or field code..." onkeyup="handleJumpInput(event)">
+            <div id="jumpResults" style="margin-top: 10px; max-height: 300px; overflow-y: auto;"></div>
+        </div>
+    </div>
+
+    <!-- Settings modal -->
+    <div class="shortcuts-modal" id="settingsModal">
+        <div class="shortcuts-content" onclick="event.stopPropagation()">
+            <h2>Settings</h2>
+            <div class="field">
+                <label>Username</label>
+                <input type="text" id="settingsUsername" disabled style="background: #333;">
+            </div>
+            <div class="field" style="margin-top: 15px;">
+                <label>MO API Key</label>
+                <input type="text" id="settingsApiKey" placeholder="Your MO API key...">
+                <p style="font-size: 11px; color: #888; margin-top: 5px;">
+                    Get your API key from <a href="https://mushroomobserver.org/account/api_keys" target="_blank" style="color: #74b9ff;">MO Account Settings</a>
+                </p>
+            </div>
+            <div class="field" style="margin-top: 15px;">
+                <label>New Password (leave blank to keep current)</label>
+                <input type="password" id="settingsPassword" placeholder="New password...">
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button class="btn-approve" onclick="saveSettings()">Save</button>
+                <button class="btn-skip" onclick="closeSettings()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Claim conflict modal -->
+    <div class="shortcuts-modal" id="claimConflictModal">
+        <div class="shortcuts-content" onclick="event.stopPropagation()">
+            <h2 style="color: #ff6b6b;">Cannot Claim Image</h2>
+            <p id="claimConflictMessage">This image is being reviewed by another user.</p>
+            <div id="claimConflictDetails" style="margin-top: 15px;"></div>
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button class="btn-skip" onclick="closeClaimConflict()">OK</button>
+                <button class="btn-discard" onclick="forceClaimImage()" id="forceClaimBtn" style="display: none;">Force Claim</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentImage = null;
+        let imageList = [];
+        let nemfDates = [];
+        let peekingImage = null;  // Image currently being peeked at
+        let adjacentCache = {};   // Cache adjacent image data
+        let currentUser = null;
+        let heartbeatInterval = null;
+
+        // Track original values for re-verification
+        let originalValues = {
+            location: '',
+            name: ''
+        };
+
+        // Autocomplete state
+        let autocompleteTimeout = null;
+        let selectedAutocompleteIndex = -1;
+
+        // Setup autocomplete for location field
+        function setupAutocomplete() {
+            const locationInput = document.getElementById('reviewLocation');
+            const locationDropdown = document.getElementById('locationDropdown');
+            const nameInput = document.getElementById('reviewName');
+            const nameDropdown = document.getElementById('nameDropdown');
+
+            // Location autocomplete
+            locationInput.addEventListener('input', (e) => {
+                clearTimeout(autocompleteTimeout);
+                autocompleteTimeout = setTimeout(() => {
+                    fetchAutocomplete('location', e.target.value, locationDropdown);
+                }, 300);
+            });
+
+            locationInput.addEventListener('focus', () => {
+                originalValues.location = locationInput.value;
+                if (locationInput.value.length >= 2) {
+                    fetchAutocomplete('location', locationInput.value, locationDropdown);
+                }
+            });
+
+            locationInput.addEventListener('blur', (e) => {
+                // Delay to allow click on dropdown item
+                setTimeout(() => {
+                    locationDropdown.classList.remove('active');
+                    // Re-verify if value changed
+                    if (locationInput.value !== originalValues.location) {
+                        verifyField('location', locationInput.value);
+                    }
+                }, 200);
+            });
+
+            locationInput.addEventListener('keydown', (e) => {
+                handleAutocompleteKeydown(e, locationDropdown, 'location');
+            });
+
+            // Name autocomplete
+            nameInput.addEventListener('input', (e) => {
+                clearTimeout(autocompleteTimeout);
+                autocompleteTimeout = setTimeout(() => {
+                    fetchAutocomplete('name', e.target.value, nameDropdown);
+                }, 300);
+            });
+
+            nameInput.addEventListener('focus', () => {
+                originalValues.name = nameInput.value;
+                if (nameInput.value.length >= 2) {
+                    fetchAutocomplete('name', nameInput.value, nameDropdown);
+                }
+            });
+
+            nameInput.addEventListener('blur', (e) => {
+                // Delay to allow click on dropdown item
+                setTimeout(() => {
+                    nameDropdown.classList.remove('active');
+                    // Re-verify if value changed
+                    if (nameInput.value !== originalValues.name) {
+                        verifyField('name', nameInput.value);
+                    }
+                }, 200);
+            });
+
+            nameInput.addEventListener('keydown', (e) => {
+                handleAutocompleteKeydown(e, nameDropdown, 'name');
+            });
+        }
+
+        async function fetchAutocomplete(type, query, dropdown) {
+            if (!query || query.length < 2) {
+                dropdown.classList.remove('active');
+                return;
+            }
+
+            const endpoint = type === 'location' ? '/api/lookup/location' : '/api/lookup/name';
+            const results = await fetch(`${endpoint}?q=${encodeURIComponent(query)}`).then(r => r.json());
+
+            if (results.length === 0) {
+                dropdown.classList.remove('active');
+                return;
+            }
+
+            selectedAutocompleteIndex = -1;
+            dropdown.innerHTML = results.map((item, idx) => {
+                const displayName = type === 'location' ? item.name : item.text_name;
+                const author = item.author ? ` <span style="color: #888;">${item.author}</span>` : '';
+                return `
+                    <div class="autocomplete-item" data-index="${idx}"
+                         data-id="${item.id}" data-name="${displayName}"
+                         onclick="selectAutocomplete('${type}', '${item.id}', '${displayName.replace(/'/g, "\\'")}')">
+                        ${displayName}${author}
+                        <span class="match-type ${item.match}">${item.match}</span>
+                    </div>
+                `;
+            }).join('');
+            dropdown.classList.add('active');
+        }
+
+        function handleAutocompleteKeydown(e, dropdown, type) {
+            const items = dropdown.querySelectorAll('.autocomplete-item');
+            if (!dropdown.classList.contains('active') || items.length === 0) return;
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                selectedAutocompleteIndex = Math.min(selectedAutocompleteIndex + 1, items.length - 1);
+                updateAutocompleteSelection(items);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                selectedAutocompleteIndex = Math.max(selectedAutocompleteIndex - 1, 0);
+                updateAutocompleteSelection(items);
+            } else if (e.key === 'Enter' && selectedAutocompleteIndex >= 0) {
+                e.preventDefault();
+                const selected = items[selectedAutocompleteIndex];
+                selectAutocomplete(type, selected.dataset.id, selected.dataset.name);
+            } else if (e.key === 'Escape') {
+                dropdown.classList.remove('active');
+            }
+        }
+
+        function updateAutocompleteSelection(items) {
+            items.forEach((item, idx) => {
+                item.classList.toggle('selected', idx === selectedAutocompleteIndex);
+            });
+            if (selectedAutocompleteIndex >= 0) {
+                items[selectedAutocompleteIndex].scrollIntoView({ block: 'nearest' });
+            }
+        }
+
+        function selectAutocomplete(type, id, name) {
+            if (type === 'location') {
+                document.getElementById('reviewLocation').value = name;
+                document.getElementById('reviewLocationId').value = id;
+                document.getElementById('locationDropdown').classList.remove('active');
+                updateFieldStatus('locationStatus', 'verified', '✓ Verified');
+            } else {
+                document.getElementById('reviewName').value = name;
+                document.getElementById('reviewNameId').value = id;
+                document.getElementById('nameDropdown').classList.remove('active');
+                updateFieldStatus('nameStatus', 'verified', '✓ Verified');
+            }
+        }
+
+        async function verifyField(type, value) {
+            if (!value || value.length < 2) {
+                updateFieldStatus(type + 'Status', '', '');
+                return;
+            }
+
+            const statusId = type + 'Status';
+            updateFieldStatus(statusId, 'verifying', '⟳ Verifying...');
+
+            const endpoint = type === 'location' ? '/api/lookup/location' : '/api/lookup/name';
+            const results = await fetch(`${endpoint}?q=${encodeURIComponent(value)}`).then(r => r.json());
+
+            // Look for exact match
+            const exactMatch = results.find(r => {
+                const matchName = type === 'location' ? r.name : r.text_name;
+                return matchName.toLowerCase() === value.toLowerCase() && r.match === 'exact';
+            });
+
+            if (exactMatch) {
+                const displayName = type === 'location' ? exactMatch.name : exactMatch.text_name;
+                if (type === 'location') {
+                    document.getElementById('reviewLocationId').value = exactMatch.id;
+                } else {
+                    document.getElementById('reviewNameId').value = exactMatch.id;
+                }
+                updateFieldStatus(statusId, 'verified', '✓ Verified');
+            } else if (results.length > 0) {
+                // Clear the ID since no exact match
+                if (type === 'location') {
+                    document.getElementById('reviewLocationId').value = '';
+                } else {
+                    document.getElementById('reviewNameId').value = '';
+                }
+                updateFieldStatus(statusId, 'unverified', '⚠ Not exact match');
+            } else {
+                if (type === 'location') {
+                    document.getElementById('reviewLocationId').value = '';
+                } else {
+                    document.getElementById('reviewNameId').value = '';
+                }
+                updateFieldStatus(statusId, 'unverified', '✗ Not found');
+            }
+        }
+
+        function updateFieldStatus(elementId, className, text) {
+            const el = document.getElementById(elementId);
+            el.className = 'field-status ' + className;
+            el.textContent = text;
+        }
+
+        // Initialize
+        async function init() {
+            // Get current user
+            const whoami = await fetch('/api/whoami').then(r => r.json());
+            currentUser = whoami.username;
+            document.getElementById('currentUser').textContent = currentUser;
+
+            const status = await fetch('/api/status').then(r => r.json());
+            updateSummary(status.summary);
+            nemfDates = status.reference.nemf_dates;
+
+            imageList = await fetch('/api/images').then(r => r.json());
+
+            // Setup autocomplete for location and name fields
+            setupAutocomplete();
+
+            // Start heartbeat interval (every 2 minutes)
+            heartbeatInterval = setInterval(sendHeartbeat, 120000);
+
+            // Start with first unreviewed image
+            const next = await fetch('/api/next-unreviewed').then(r => r.json());
+            if (next.filename) {
+                loadImage(next.filename);
+            } else if (imageList.length > 0) {
+                loadImage(imageList[0].filename);
+            }
+        }
+
+        async function sendHeartbeat() {
+            if (currentImage && currentImage.claim?.is_mine) {
+                await fetch(`/api/image/${encodeURIComponent(currentImage.filename)}/heartbeat`, {
+                    method: 'POST'
+                });
+            }
+        }
+
+        async function loadImage(filename) {
+            const data = await fetch(`/api/image/${encodeURIComponent(filename)}`).then(r => r.json());
+            if (data.error) {
+                alert(data.error);
+                return;
+            }
+
+            currentImage = data;
+            peekingImage = null;
+            closePeek();
+
+            // Update image
+            document.getElementById('mainImage').src = `/images/${encodeURIComponent(filename)}`;
+            document.getElementById('currentFilename').textContent = filename;
+
+            // Update claim status
+            const claimStatus = document.getElementById('claimStatus');
+            if (data.claim) {
+                if (data.claim.is_mine) {
+                    claimStatus.innerHTML = '<span style="color: #4ecca3;">✓ You have this image</span>';
+                } else {
+                    claimStatus.innerHTML = `<span style="color: #ff6b6b;">⚠ Claimed by ${data.claim.claimed_by}</span>`;
+                    showClaimConflict(data.claim.claimed_by, filename);
+                }
+            } else {
+                claimStatus.innerHTML = '';
+            }
+
+            // Update position
+            document.getElementById('positionInfo').textContent =
+                `${data.nav.current_index + 1}/${data.nav.total}`;
+
+            // Update source data with match indicators
+            const src = data.source;
+            setSourceField('sourceFieldCode', src.field_code, src.confidence?.['Field Slip Code']);
+
+            // Update field slip link
+            const fieldSlipLink = document.getElementById('fieldSlipLink');
+            if (src.field_code && src.field_code.startsWith('NEMF-')) {
+                fieldSlipLink.href = `https://mushroomobserver.org/qr/${src.field_code}`;
+                fieldSlipLink.style.display = 'inline';
+            } else {
+                fieldSlipLink.style.display = 'none';
+            }
+
+            setSourceField('sourceDate', src.date, src.confidence?.['Date']);
+            setSourceField('sourceLocation', src.location, src.confidence?.['Location']);
+            setSourceField('sourceName', src.name, src.confidence?.['ID']);
+            document.getElementById('sourceNotes').textContent = src.notes || '-';
+
+            // Update match indicators
+            updateMatchIndicator('locationMatchIndicator', src.location_match, src.location_id);
+            updateMatchIndicator('nameMatchIndicator', src.name_match, src.name_id);
+
+            // Existing observations
+            const existingContainer = document.getElementById('existingObsContainer');
+            const existingObs = document.getElementById('existingObs');
+            if (src.existing_observations && src.existing_observations.length > 0) {
+                existingContainer.style.display = 'block';
+                existingObs.innerHTML = src.existing_observations.map(obs =>
+                    `<a href="${obs.url}" target="_blank">#${obs.observation_id}</a> (${obs.owner})`
+                ).join(', ');
+            } else {
+                existingContainer.style.display = 'none';
+            }
+
+            // Update review fields
+            const rev = data.review;
+            document.getElementById('reviewFieldCode').value = rev.field_code || src.field_code || '';
+            document.getElementById('reviewDate').value = rev.date || src.date || '';
+            document.getElementById('reviewLocation').value = rev.location || src.location || '';
+            document.getElementById('reviewLocationId').value = rev.location_id || src.location_id || '';
+            document.getElementById('reviewName').value = rev.name || src.name || '';
+            document.getElementById('reviewNameId').value = rev.name_id || src.name_id || '';
+            document.getElementById('reviewNotes').value = rev.notes || '';
+
+            // Update field verification status based on whether we have IDs
+            const locationId = rev.location_id || src.location_id;
+            const nameId = rev.name_id || src.name_id;
+            updateFieldStatus('locationStatus', locationId ? 'verified' : '', locationId ? '✓ Verified' : '');
+            updateFieldStatus('nameStatus', nameId ? 'verified' : '', nameId ? '✓ Verified' : '');
+
+            // Store original values for change detection
+            originalValues.location = document.getElementById('reviewLocation').value;
+            originalValues.name = document.getElementById('reviewName').value;
+
+            // Linked images
+            const linkedField = document.getElementById('linkedImagesField');
+            const linkedList = document.getElementById('linkedImagesList');
+            if (rev.linked_images && rev.linked_images.length > 0) {
+                linkedField.style.display = 'block';
+                linkedList.textContent = rev.linked_images.join(', ');
+            } else {
+                linkedField.style.display = 'none';
+            }
+
+            // Status badge
+            const badge = document.getElementById('statusBadge');
+            if (rev.status) {
+                badge.innerHTML = `<span class="status-badge status-${rev.status}">${rev.status}</span>`;
+            } else {
+                badge.innerHTML = '';
+            }
+
+            // Load adjacent images
+            loadAdjacentImages(filename);
+        }
+
+        function updateMatchIndicator(elementId, matchType, id) {
+            const el = document.getElementById(elementId);
+            if (matchType === 'exact') {
+                el.className = 'match-indicator match-exact';
+                el.textContent = '✓';
+                el.title = `Matched in database (ID: ${id})`;
+            } else if (matchType === 'partial') {
+                el.className = 'match-indicator match-partial';
+                el.textContent = '?';
+                el.title = 'Partial match - needs review';
+            } else {
+                el.className = 'match-indicator match-none';
+                el.textContent = '✗';
+                el.title = 'Not found in database';
+            }
+        }
+
+        function setSourceField(elementId, value, confidence) {
+            const el = document.getElementById(elementId);
+            if (!value) {
+                el.textContent = '(missing)';
+                el.className = 'value missing';
+            } else {
+                el.textContent = value;
+                el.className = confidence === 'low' ? 'value low-confidence' : 'value';
+            }
+        }
+
+        async function loadAdjacentImages(filename) {
+            const adjacent = await fetch(`/api/adjacent/${encodeURIComponent(filename)}`).then(r => r.json());
+            adjacentCache = {};
+            adjacent.forEach(img => adjacentCache[img.filename] = img);
+
+            const container = document.getElementById('adjacentImages');
+            container.innerHTML = adjacent.map(img => `
+                <div class="adjacent-thumb ${img.is_current ? 'current' : ''}" data-filename="${img.filename}">
+                    <img src="/images/${encodeURIComponent(img.filename)}"
+                         onclick="peekImage('${img.filename}')"
+                         title="${img.filename}">
+                    ${img.field_code ? `<span class="thumb-code">${img.field_code}</span>` : ''}
+                    ${!img.is_current ? `<button class="link-btn" onclick="event.stopPropagation(); linkFromImage('${img.filename}')">Link</button>` : ''}
+                </div>
+            `).join('');
+        }
+
+        async function peekImage(filename) {
+            if (filename === currentImage.filename) {
+                closePeek();
+                return;
+            }
+
+            // Fetch full data for peeked image
+            const data = await fetch(`/api/image/${encodeURIComponent(filename)}`).then(r => r.json());
+            if (data.error) return;
+
+            peekingImage = data;
+
+            // Update UI to show peeking
+            document.getElementById('peekingIndicator').style.display = 'inline';
+
+            // Highlight peeked thumbnail
+            document.querySelectorAll('.adjacent-thumb').forEach(el => {
+                el.classList.remove('peeking');
+                if (el.dataset.filename === filename) {
+                    el.classList.add('peeking');
+                }
+            });
+
+            // Show peek panel
+            const panel = document.getElementById('peekPanel');
+            panel.classList.add('active');
+            document.getElementById('peekFilename').textContent = filename;
+            document.getElementById('peekFieldCode').textContent = data.source.field_code || '(none)';
+            document.getElementById('peekDate').textContent = data.source.date || '(none)';
+            document.getElementById('peekLocation').textContent = data.source.location || '(none)';
+            document.getElementById('peekName').textContent = data.source.name || '(none)';
+
+            // Show peeked image in main view temporarily
+            document.getElementById('mainImage').src = `/images/${encodeURIComponent(filename)}`;
+        }
+
+        function closePeek() {
+            peekingImage = null;
+            document.getElementById('peekingIndicator').style.display = 'none';
+            document.getElementById('peekPanel').classList.remove('active');
+            document.querySelectorAll('.adjacent-thumb').forEach(el => el.classList.remove('peeking'));
+
+            // Restore current image
+            if (currentImage) {
+                document.getElementById('mainImage').src = `/images/${encodeURIComponent(currentImage.filename)}`;
+            }
+        }
+
+        function linkFromPeek() {
+            if (!peekingImage) return;
+            linkFromImage(peekingImage.filename);
+        }
+
+        async function linkFromImage(sourceFilename) {
+            // Fetch source image data
+            const data = await fetch(`/api/image/${encodeURIComponent(sourceFilename)}`).then(r => r.json());
+            if (data.error) return;
+
+            const src = data.source;
+            const rev = data.review;
+
+            // Copy field data to current review fields (prefer review data if set)
+            if (src.field_code || rev.field_code) {
+                document.getElementById('reviewFieldCode').value = rev.field_code || src.field_code;
+            }
+            if (src.date || rev.date) {
+                document.getElementById('reviewDate').value = rev.date || src.date;
+            }
+            if (src.location || rev.location) {
+                document.getElementById('reviewLocation').value = rev.location || src.location;
+                document.getElementById('reviewLocationId').value = rev.location_id || src.location_id || '';
+            }
+            if (src.name || rev.name) {
+                document.getElementById('reviewName').value = rev.name || src.name;
+                document.getElementById('reviewNameId').value = rev.name_id || src.name_id || '';
+            }
+
+            // Track linked image
+            let linkedImages = currentImage.review.linked_images || [];
+            if (!linkedImages.includes(sourceFilename)) {
+                linkedImages.push(sourceFilename);
+            }
+            currentImage.review.linked_images = linkedImages;
+
+            // Update linked images display
+            const linkedField = document.getElementById('linkedImagesField');
+            const linkedList = document.getElementById('linkedImagesList');
+            linkedField.style.display = 'block';
+            linkedList.textContent = linkedImages.join(', ');
+
+            closePeek();
+        }
+
+        function switchToPeek() {
+            if (!peekingImage) return;
+            loadImage(peekingImage.filename);
+        }
+
+        function zoomImage() {
+            const modal = document.getElementById('zoomModal');
+            const zoomImg = document.getElementById('zoomImage');
+            const label = document.getElementById('zoomLabel');
+
+            const filename = peekingImage ? peekingImage.filename : currentImage.filename;
+            zoomImg.src = `/images/${encodeURIComponent(filename)}`;
+            label.textContent = filename;
+            modal.classList.add('active');
+        }
+
+        function closeZoom() {
+            document.getElementById('zoomModal').classList.remove('active');
+        }
+
+        function updateSummary(summary) {
+            document.getElementById('totalCount').textContent = summary.total;
+            document.getElementById('reviewedCount').textContent = summary.reviewed;
+            document.getElementById('approvedCount').textContent = summary.approved;
+            document.getElementById('discardedCount').textContent = summary.discarded;
+        }
+
+        async function submitReview(status) {
+            if (!currentImage) return;
+
+            const dateSelect = document.getElementById('reviewDate');
+            let date = dateSelect.value;
+            if (date === 'other') {
+                date = document.getElementById('reviewDateCustom').value;
+            }
+
+            // Determine if corrections were made
+            const src = currentImage.source;
+            const fieldCode = document.getElementById('reviewFieldCode').value;
+            const location = document.getElementById('reviewLocation').value;
+            const name = document.getElementById('reviewName').value;
+
+            const hasCorrections = (
+                fieldCode !== (src.field_code || '') ||
+                date !== (src.date || '') ||
+                location !== (src.location || '') ||
+                name !== (src.name || '')
+            );
+
+            const finalStatus = (status === 'approved' && hasCorrections) ? 'corrected' : status;
+
+            const reviewData = {
+                status: finalStatus,
+                field_code: fieldCode,
+                date: date,
+                location: location,
+                location_id: document.getElementById('reviewLocationId').value || null,
+                name: name,
+                name_id: document.getElementById('reviewNameId').value || null,
+                notes: document.getElementById('reviewNotes').value,
+                linked_images: currentImage.review.linked_images || []
+            };
+
+            const response = await fetch(`/api/image/${encodeURIComponent(currentImage.filename)}/review`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(reviewData)
+            }).then(r => r.json());
+
+            if (response.success) {
+                updateSummary(response.summary);
+                nextImage();
+            }
+        }
+
+        async function nextImage() {
+            if (!currentImage) return;
+            closePeek();
+            if (currentImage.nav.next) {
+                loadImage(currentImage.nav.next);
+            } else {
+                // Try to find next unreviewed
+                const next = await fetch('/api/next-unreviewed').then(r => r.json());
+                if (next.filename) {
+                    loadImage(next.filename);
+                } else {
+                    alert('All images reviewed!');
+                }
+            }
+        }
+
+        function prevImage() {
+            if (!currentImage || !currentImage.nav.prev) return;
+            closePeek();
+            loadImage(currentImage.nav.prev);
+        }
+
+        function jumpToImage() {
+            document.getElementById('jumpModal').classList.add('active');
+            document.getElementById('jumpInput').value = '';
+            document.getElementById('jumpInput').focus();
+            document.getElementById('jumpResults').innerHTML = '';
+        }
+
+        function closeJumpModal() {
+            document.getElementById('jumpModal').classList.remove('active');
+        }
+
+        function handleJumpInput(event) {
+            if (event.key === 'Escape') {
+                closeJumpModal();
+                return;
+            }
+            if (event.key === 'Enter') {
+                const results = document.getElementById('jumpResults');
+                const first = results.querySelector('.candidate');
+                if (first) first.click();
+                return;
+            }
+
+            const query = event.target.value.toLowerCase();
+            if (query.length < 2) {
+                document.getElementById('jumpResults').innerHTML = '';
+                return;
+            }
+
+            const matches = imageList.filter(img =>
+                img.filename.toLowerCase().includes(query) ||
+                (img.field_code && img.field_code.toLowerCase().includes(query))
+            ).slice(0, 10);
+
+            document.getElementById('jumpResults').innerHTML = matches.map(img => `
+                <div class="candidate" onclick="loadImage('${img.filename}'); closeJumpModal();">
+                    ${img.filename}
+                    ${img.field_code ? `<span style="color: #888;"> - ${img.field_code}</span>` : ''}
+                    ${img.status ? `<span class="status-badge status-${img.status}" style="margin-left: 10px;">${img.status}</span>` : ''}
+                </div>
+            `).join('');
+        }
+
+        function showShortcuts() {
+            document.getElementById('shortcutsModal').classList.add('active');
+        }
+
+        function closeShortcuts() {
+            document.getElementById('shortcutsModal').classList.remove('active');
+        }
+
+        // Date selector
+        document.getElementById('reviewDate').addEventListener('change', function() {
+            const customDate = document.getElementById('reviewDateCustom');
+            customDate.style.display = this.value === 'other' ? 'block' : 'none';
+        });
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            // Ignore if in input field (unless Escape)
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') {
+                if (e.key === 'Escape') {
+                    e.target.blur();
+                    closeJumpModal();
+                    closeShortcuts();
+                    closeZoom();
+                    closePeek();
+                }
+                return;
+            }
+
+            switch(e.key) {
+                case 'a':
+                case 'Enter':
+                    e.preventDefault();
+                    submitReview('approved');
+                    break;
+                case 'd':
+                    e.preventDefault();
+                    submitReview('discarded');
+                    break;
+                case 's':
+                case 'ArrowRight':
+                case 'n':
+                    e.preventDefault();
+                    nextImage();
+                    break;
+                case 'ArrowLeft':
+                case 'p':
+                    e.preventDefault();
+                    prevImage();
+                    break;
+                case 'j':
+                    e.preventDefault();
+                    jumpToImage();
+                    break;
+                case 'f':
+                    e.preventDefault();
+                    document.getElementById('reviewFieldCode').focus();
+                    break;
+                case 'z':
+                    e.preventDefault();
+                    zoomImage();
+                    break;
+                case '1':
+                case '2':
+                case '3':
+                case '4':
+                case '5':
+                    e.preventDefault();
+                    const dateIdx = parseInt(e.key) - 1;
+                    if (nemfDates[dateIdx]) {
+                        document.getElementById('reviewDate').value = nemfDates[dateIdx];
+                    }
+                    break;
+                case '?':
+                    e.preventDefault();
+                    showShortcuts();
+                    break;
+                case 'Escape':
+                    closeJumpModal();
+                    closeShortcuts();
+                    closeZoom();
+                    closePeek();
+                    break;
+            }
+        });
+
+        // Settings modal
+        async function showSettings() {
+            const settings = await fetch('/api/settings').then(r => r.json());
+            document.getElementById('settingsUsername').value = settings.username;
+            document.getElementById('settingsApiKey').value = settings.api_key || '';
+            document.getElementById('settingsPassword').value = '';
+            document.getElementById('settingsModal').classList.add('active');
+        }
+
+        function closeSettings() {
+            document.getElementById('settingsModal').classList.remove('active');
+        }
+
+        async function saveSettings() {
+            const apiKey = document.getElementById('settingsApiKey').value;
+            const password = document.getElementById('settingsPassword').value;
+
+            const data = { api_key: apiKey };
+            if (password) data.password = password;
+
+            const response = await fetch('/api/settings', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            }).then(r => r.json());
+
+            if (response.success) {
+                closeSettings();
+                if (password) {
+                    alert('Settings saved. You may need to re-login with your new password.');
+                }
+            } else {
+                alert('Failed to save settings: ' + (response.error || 'Unknown error'));
+            }
+        }
+
+        // Claim conflict modal
+        let pendingClaimFilename = null;
+
+        function showClaimConflict(claimedBy, filename) {
+            pendingClaimFilename = filename;
+            document.getElementById('claimConflictMessage').textContent =
+                `This image is currently being reviewed by ${claimedBy}. Please coordinate with them before making changes.`;
+            document.getElementById('claimConflictDetails').innerHTML =
+                `<p>You can:</p>
+                <ul style="margin-left: 20px; color: #888;">
+                    <li>Wait for them to finish</li>
+                    <li>Skip to another image</li>
+                    <li>Contact ${claimedBy} to coordinate</li>
+                </ul>`;
+            document.getElementById('claimConflictModal').classList.add('active');
+        }
+
+        function closeClaimConflict() {
+            document.getElementById('claimConflictModal').classList.remove('active');
+            pendingClaimFilename = null;
+        }
+
+        async function forceClaimImage() {
+            // Not implemented for initial version - users coordinate manually
+            closeClaimConflict();
+        }
+
+        // Update linkFromImage to check claims first
+        const originalLinkFromImage = linkFromImage;
+        linkFromImage = async function(sourceFilename) {
+            // Try to claim both images
+            const response = await fetch(`/api/link/${encodeURIComponent(currentImage.filename)}`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ target: sourceFilename })
+            }).then(r => r.json());
+
+            if (!response.success) {
+                if (response.failed_claims) {
+                    const failed = response.failed_claims.map(f =>
+                        `${f.filename} (claimed by ${f.claimed_by})`
+                    ).join(', ');
+                    alert(`Cannot link: ${failed}\n\nPlease coordinate with the other reviewer.`);
+                } else {
+                    alert('Failed to link: ' + (response.error || 'Unknown error'));
+                }
+                return;
+            }
+
+            // Now do the actual linking
+            const data = await fetch(`/api/image/${encodeURIComponent(sourceFilename)}`).then(r => r.json());
+            if (data.error) return;
+
+            const src = data.source;
+            const rev = data.review;
+
+            if (src.field_code || rev.field_code) {
+                document.getElementById('reviewFieldCode').value = rev.field_code || src.field_code;
+            }
+            if (src.date || rev.date) {
+                document.getElementById('reviewDate').value = rev.date || src.date;
+            }
+            if (src.location || rev.location) {
+                document.getElementById('reviewLocation').value = rev.location || src.location;
+                document.getElementById('reviewLocationId').value = rev.location_id || src.location_id || '';
+            }
+            if (src.name || rev.name) {
+                document.getElementById('reviewName').value = rev.name || src.name;
+                document.getElementById('reviewNameId').value = rev.name_id || src.name_id || '';
+            }
+
+            let linkedImages = currentImage.review.linked_images || [];
+            if (!linkedImages.includes(sourceFilename)) {
+                linkedImages.push(sourceFilename);
+            }
+            currentImage.review.linked_images = linkedImages;
+
+            const linkedField = document.getElementById('linkedImagesField');
+            const linkedList = document.getElementById('linkedImagesList');
+            linkedField.style.display = 'block';
+            linkedList.textContent = linkedImages.join(', ');
+
+            closePeek();
+        };
+
+        // Initialize on load
+        init();
+    </script>
+</body>
+</html>

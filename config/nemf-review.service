@@ -1,0 +1,15 @@
+[Unit]
+Description=NEMF Photo Review Server
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/nemf-review
+Environment="PATH=/var/www/nemf-review/venv/bin"
+ExecStart=/var/www/nemf-review/venv/bin/gunicorn --workers 3 --bind 127.0.0.1:5001 --chdir /var/www/nemf-review 'app.server:create_app("/var/www/nemf-review/data/review_data.json", "/var/www/nemf-review/data/users.json")'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

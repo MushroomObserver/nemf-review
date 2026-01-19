@@ -1,0 +1,35 @@
+# Data files (too large / generated)
+*.json
+!users.json.example
+!package.json
+
+# Images
+data/
+images/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+*.egg-info/
+
+# Environment
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local planning docs
+DEPLOYMENT_PLAN.md
+clarifications.txt
+clarifications.txt~
+*.txt~
