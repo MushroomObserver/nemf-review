@@ -15,6 +15,10 @@ venv/
 .venv/
 *.egg-info/
 
+# Server logs
+server.log
+nohup.out
+
 # Environment
 .env
 

@@ -8,6 +8,7 @@ A web-based tool for reviewing extracted field slip data from NEMF 2025 photos.
 - Image claiming/locking to prevent conflicts
 - Autocomplete for MO locations and names
 - Link related images (e.g., closeups to main shots)
+- Mark images as "Already on MO" with ID verification
 - Integration with MO field slip pages
 - Keyboard-driven workflow
 
@@ -16,6 +17,7 @@ A web-based tool for reviewing extracted field slip data from NEMF 2025 photos.
 | Key | Action |
 |-----|--------|
 | `a` / `Enter` | Approve image |
+| `m` | Mark as "Already on MO" |
 | `d` | Discard image |
 | `s` / `→` / `n` | Next image |
 | `←` / `p` | Previous image |

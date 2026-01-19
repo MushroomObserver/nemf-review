@@ -398,7 +398,7 @@ def prepare_review_data(extracted_data, existing_obs, location_lookup, name_look
                 'existing_observations': existing
             },
             'review': {
-                'status': None,  # None, 'approved', 'corrected', 'discarded'
+                'status': None,  # None, 'approved', 'corrected', 'discarded', 'already_on_mo'
                 'field_code': None,
                 'date': None,
                 'location': None,
@@ -406,6 +406,8 @@ def prepare_review_data(extracted_data, existing_obs, location_lookup, name_look
                 'name': None,
                 'name_id': None,
                 'notes': None,
+                'mo_id_type': None,  # 'observation' or 'image'
+                'mo_id_value': None,  # The MO ID
                 'reviewed_at': None,
                 'reviewer': None
             },
@@ -511,7 +513,8 @@ def main():
             'reviewed': 0,
             'approved': 0,
             'corrected': 0,
-            'discarded': 0
+            'discarded': 0,
+            'already_on_mo': 0
         }
     }
 

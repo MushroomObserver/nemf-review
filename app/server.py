@@ -11,6 +11,7 @@ from functools import wraps
 from pathlib import Path
 from threading import Lock
 
+import requests
 from flask import Flask, render_template, jsonify, request, send_from_directory, Response
 
 app = Flask(__name__, template_folder='../templates', static_folder='../static')
@@ -226,6 +227,7 @@ def save_data():
         summary['approved'] = 0
         summary['corrected'] = 0
         summary['discarded'] = 0
+        summary['already_on_mo'] = 0
 
         for img in review_data['images'].values():
             status = img['review'].get('status')
@@ -237,6 +239,8 @@ def save_data():
                     summary['corrected'] += 1
                 elif status == 'discarded':
                     summary['discarded'] += 1
+                elif status == 'already_on_mo':
+                    summary['already_on_mo'] += 1
 
         with open(data_file, 'w') as f:
             json.dump(review_data, f, indent=2)
@@ -407,6 +411,8 @@ def api_review_image(filename):
     review['name_id'] = data.get('name_id', review.get('name_id'))
     review['notes'] = data.get('notes', review.get('notes'))
     review['linked_images'] = data.get('linked_images', review.get('linked_images', []))
+    review['mo_id_type'] = data.get('mo_id_type', review.get('mo_id_type'))
+    review['mo_id_value'] = data.get('mo_id_value', review.get('mo_id_value'))
     review['reviewed_at'] = datetime.now().isoformat()
     review['reviewer'] = username  # Track who reviewed
 
@@ -624,6 +630,43 @@ def api_lookup_existing_observations():
                     results.append(obs)
 
     return jsonify(results)
+
+
+@app.route('/api/verify_mo_id')
+@requires_auth
+def api_verify_mo_id():
+    """Verify that an MO observation or image ID exists."""
+    id_type = request.args.get('type', '')
+    id_value = request.args.get('id', '')
+
+    if not id_type or not id_value:
+        return jsonify({'error': 'Missing type or id'}), 400
+
+    if id_type not in ('observation', 'image'):
+        return jsonify({'error': 'Invalid type'}), 400
+
+    try:
+        # Call MO API to verify the ID exists
+        if id_type == 'observation':
+            url = f'https://mushroomobserver.org/api2/observations/{id_value}'
+        else:
+            url = f'https://mushroomobserver.org/api2/images/{id_value}'
+
+        response = requests.get(url, timeout=10)
+
+        if response.status_code == 200:
+            return jsonify({'exists': True, 'id': id_value, 'type': id_type})
+        elif response.status_code == 404:
+            return jsonify({'exists': False, 'id': id_value, 'type': id_type})
+        else:
+            return jsonify({
+                'error': f'MO API returned status {response.status_code}'
+            }), 500
+
+    except requests.Timeout:
+        return jsonify({'error': 'Request to MO API timed out'}), 504
+    except requests.RequestException as e:
+        return jsonify({'error': f'Failed to verify: {str(e)}'}), 500
 
 
 @app.route('/api/adjacent/<path:filename>')
