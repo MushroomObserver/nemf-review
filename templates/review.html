@@ -525,7 +525,7 @@
                         <button class="btn-close-peek" onclick="closePeek()">✕</button>
                     </h4>
                     <div class="peek-data">
-                        <div><strong>Field Code:</strong> <span id="peekFieldCode">-</span></div>
+                        <div><strong>Field Code:</strong> <span id="peekFieldCode">-</span> <a id="peekFieldSlipLink" href="#" target="_blank" style="color: #74b9ff; font-size: 11px; display: none;">View on MO</a></div>
                         <div><strong>Date:</strong> <span id="peekDate">-</span></div>
                         <div><strong>Location:</strong> <span id="peekLocation">-</span></div>
                         <div><strong>ID:</strong> <span id="peekName">-</span></div>
@@ -544,8 +544,8 @@
             <div class="section">
                 <h3>Review / Corrections <span id="statusBadge"></span></h3>
                 <div class="field">
-                    <label>Field Slip Code <span class="keyboard-hint">[f]</span></label>
-                    <input type="text" id="reviewFieldCode" placeholder="NEMF-XXXXX">
+                    <label>Field Slip Code <span class="keyboard-hint">[f]</span> <a id="reviewFieldSlipLink" href="#" target="_blank" style="color: #74b9ff; font-size: 11px; display: none;">View on MO</a></label>
+                    <input type="text" id="reviewFieldCode" placeholder="NEMF-XXXXX" oninput="updateReviewFieldSlipLink()">
                 </div>
                 <div class="field">
                     <label>Date <span class="keyboard-hint">[1-5]</span></label>
@@ -895,6 +895,17 @@
             el.textContent = text;
         }
 
+        function updateReviewFieldSlipLink() {
+            const code = document.getElementById('reviewFieldCode').value;
+            const link = document.getElementById('reviewFieldSlipLink');
+            if (code && code.startsWith('NEMF-')) {
+                link.href = `https://mushroomobserver.org/qr/${code}`;
+                link.style.display = 'inline';
+            } else {
+                link.style.display = 'none';
+            }
+        }
+
         // Initialize
         async function init() {
             // Get current user
@@ -1000,6 +1011,7 @@
             // Update review fields
             const rev = data.review;
             document.getElementById('reviewFieldCode').value = rev.field_code || src.field_code || '';
+            updateReviewFieldSlipLink();
             document.getElementById('reviewDate').value = rev.date || src.date || '';
             document.getElementById('reviewLocation').value = rev.location || src.location || '';
             document.getElementById('reviewLocationId').value = rev.location_id || src.location_id || '';
@@ -1111,7 +1123,18 @@
             const panel = document.getElementById('peekPanel');
             panel.classList.add('active');
             document.getElementById('peekFilename').textContent = filename;
-            document.getElementById('peekFieldCode').textContent = data.source.field_code || '(none)';
+            const peekCode = data.source.field_code || data.review.field_code;
+            document.getElementById('peekFieldCode').textContent = peekCode || '(none)';
+
+            // Update peek field slip link
+            const peekLink = document.getElementById('peekFieldSlipLink');
+            if (peekCode && peekCode.startsWith('NEMF-')) {
+                peekLink.href = `https://mushroomobserver.org/qr/${peekCode}`;
+                peekLink.style.display = 'inline';
+            } else {
+                peekLink.style.display = 'none';
+            }
+
             document.getElementById('peekDate').textContent = data.source.date || '(none)';
             document.getElementById('peekLocation').textContent = data.source.location || '(none)';
             document.getElementById('peekName').textContent = data.source.name || '(none)';
@@ -1496,6 +1519,7 @@
 
             if (src.field_code || rev.field_code) {
                 document.getElementById('reviewFieldCode').value = rev.field_code || src.field_code;
+                updateReviewFieldSlipLink();
             }
             if (src.date || rev.date) {
                 document.getElementById('reviewDate').value = rev.date || src.date;
