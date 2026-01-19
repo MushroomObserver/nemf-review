@@ -602,6 +602,30 @@ def api_lookup_name():
     return jsonify(results[:10])
 
 
+@app.route('/api/lookup/existing_observations')
+@requires_auth
+def api_lookup_existing_observations():
+    """Look up existing MO observations by field code."""
+    code = request.args.get('code', '')
+    if not code:
+        return jsonify([])
+
+    # Search through all images for matching field codes
+    seen = set()
+    results = []
+    for img in review_data['images'].values():
+        src = img.get('source', {})
+        if src.get('field_code') == code:
+            for obs in src.get('existing_observations', []):
+                # Deduplicate by observation_id
+                obs_id = obs.get('observation_id')
+                if obs_id and obs_id not in seen:
+                    seen.add(obs_id)
+                    results.append(obs)
+
+    return jsonify(results)
+
+
 @app.route('/api/adjacent/<path:filename>')
 @requires_auth
 def api_adjacent(filename):

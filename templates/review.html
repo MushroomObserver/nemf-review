@@ -590,6 +590,10 @@
                     <label>Linked Images</label>
                     <div id="linkedImagesList" style="font-size: 12px; color: #4ecca3;"></div>
                 </div>
+                <div id="reviewExistingObsContainer" style="display: none; margin-top: 10px;">
+                    <label style="font-size: 11px; color: #888; text-transform: uppercase;">Existing MO Observation</label>
+                    <div class="existing-obs" id="reviewExistingObs"></div>
+                </div>
             </div>
 
             <div class="actions">
@@ -901,8 +905,32 @@
             if (code && code.startsWith('NEMF-')) {
                 link.href = `https://mushroomobserver.org/qr/${code}`;
                 link.style.display = 'inline';
+                // Also look up existing observations for this code
+                updateReviewExistingObs(code);
             } else {
                 link.style.display = 'none';
+                document.getElementById('reviewExistingObsContainer').style.display = 'none';
+            }
+        }
+
+        async function updateReviewExistingObs(code) {
+            const container = document.getElementById('reviewExistingObsContainer');
+            const obsDiv = document.getElementById('reviewExistingObs');
+
+            if (!code) {
+                container.style.display = 'none';
+                return;
+            }
+
+            const results = await fetch(`/api/lookup/existing_observations?code=${encodeURIComponent(code)}`).then(r => r.json());
+
+            if (results.length > 0) {
+                container.style.display = 'block';
+                obsDiv.innerHTML = results.map(obs =>
+                    `<a href="${obs.url}" target="_blank">#${obs.observation_id}</a> (${obs.owner})`
+                ).join(', ');
+            } else {
+                container.style.display = 'none';
             }
         }
 
@@ -996,12 +1024,19 @@
             updateMatchIndicator('locationMatchIndicator', src.location_match, src.location_id);
             updateMatchIndicator('nameMatchIndicator', src.name_match, src.name_id);
 
-            // Existing observations
+            // Existing observations (deduplicated)
             const existingContainer = document.getElementById('existingObsContainer');
             const existingObs = document.getElementById('existingObs');
             if (src.existing_observations && src.existing_observations.length > 0) {
+                // Deduplicate by observation_id
+                const seen = new Set();
+                const uniqueObs = src.existing_observations.filter(obs => {
+                    if (seen.has(obs.observation_id)) return false;
+                    seen.add(obs.observation_id);
+                    return true;
+                });
                 existingContainer.style.display = 'block';
-                existingObs.innerHTML = src.existing_observations.map(obs =>
+                existingObs.innerHTML = uniqueObs.map(obs =>
                     `<a href="${obs.url}" target="_blank">#${obs.observation_id}</a> (${obs.owner})`
                 ).join(', ');
             } else {
