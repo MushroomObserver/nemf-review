@@ -1036,6 +1036,14 @@
             // Start heartbeat interval (every 2 minutes)
             heartbeatInterval = setInterval(sendHeartbeat, 120000);
 
+            // Listen for page visibility changes to refresh claim when returning to tab
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden) {
+                    // Tab became visible - immediately check claim status
+                    sendHeartbeat();
+                }
+            });
+
             // Start with first unreviewed image
             const next = await fetch('/api/next-unreviewed').then(r => r.json());
             if (next.filename) {
@@ -1045,11 +1053,48 @@
             }
         }
 
+        function updateClaimStatus(claim) {
+            const claimStatus = document.getElementById('claimStatus');
+            if (claim) {
+                if (claim.is_mine) {
+                    claimStatus.innerHTML = '<span style="color: #4ecca3;">✓ You have this image</span>';
+                } else {
+                    claimStatus.innerHTML = `<span style="color: #ff6b6b;">⚠ Claimed by ${claim.claimed_by}</span>`;
+                }
+            } else {
+                claimStatus.innerHTML = '';
+            }
+        }
+
+        function handleClaimLoss(claimedBy) {
+            if (!currentImage) return;
+
+            // Update the current image's claim status
+            currentImage.claim.is_mine = false;
+            currentImage.claim.claimed_by = claimedBy;
+
+            // Update UI
+            updateClaimStatus(currentImage.claim);
+
+            // Show modal warning
+            showClaimConflict(claimedBy, currentImage.filename);
+        }
+
         async function sendHeartbeat() {
             if (currentImage && currentImage.claim?.is_mine) {
-                await fetch(`/api/image/${encodeURIComponent(currentImage.filename)}/heartbeat`, {
-                    method: 'POST'
-                });
+                try {
+                    const response = await fetch(`/api/image/${encodeURIComponent(currentImage.filename)}/heartbeat`, {
+                        method: 'POST'
+                    });
+                    const data = await response.json();
+
+                    // Check if we lost the claim
+                    if (!data.success) {
+                        handleClaimLoss(data.claimed_by);
+                    }
+                } catch (error) {
+                    console.error('Heartbeat failed:', error);
+                }
             }
         }
 
@@ -1069,16 +1114,9 @@
             document.getElementById('currentFilename').textContent = filename;
 
             // Update claim status
-            const claimStatus = document.getElementById('claimStatus');
-            if (data.claim) {
-                if (data.claim.is_mine) {
-                    claimStatus.innerHTML = '<span style="color: #4ecca3;">✓ You have this image</span>';
-                } else {
-                    claimStatus.innerHTML = `<span style="color: #ff6b6b;">⚠ Claimed by ${data.claim.claimed_by}</span>`;
-                    showClaimConflict(data.claim.claimed_by, filename);
-                }
-            } else {
-                claimStatus.innerHTML = '';
+            updateClaimStatus(data.claim);
+            if (data.claim && !data.claim.is_mine) {
+                showClaimConflict(data.claim.claimed_by, filename);
             }
 
             // Update position
@@ -1387,15 +1425,27 @@
                 linked_images: currentImage.review.linked_images || []
             };
 
-            const response = await fetch(`/api/image/${encodeURIComponent(currentImage.filename)}/review`, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(reviewData)
-            }).then(r => r.json());
+            try {
+                const response = await fetch(`/api/image/${encodeURIComponent(currentImage.filename)}/review`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(reviewData)
+                });
 
-            if (response.success) {
-                updateSummary(response.summary);
-                nextImage();
+                const data = await response.json();
+
+                if (data.success) {
+                    updateSummary(data.summary);
+                    nextImage();
+                } else if (response.status === 409) {
+                    // Claim conflict - lost the claim to another user
+                    handleClaimLoss(data.claimed_by);
+                    alert(`Cannot submit: This image is now being reviewed by ${data.claimed_by}.\n\nYour changes have NOT been saved.`);
+                } else {
+                    alert('Failed to submit: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Failed to submit: ' + error.message);
             }
         }
 
@@ -1757,6 +1807,11 @@
                     closeAlreadyOnMOModal();
                     updateSummary(data.summary);
                     nextImage();
+                } else if (response.status === 409) {
+                    // Claim conflict - lost the claim to another user
+                    closeAlreadyOnMOModal();
+                    handleClaimLoss(data.claimed_by);
+                    alert(`Cannot submit: This image is now being reviewed by ${data.claimed_by}.\n\nYour changes have NOT been saved.`);
                 } else {
                     alert('Failed to submit: ' + (data.error || 'Unknown error'));
                 }
