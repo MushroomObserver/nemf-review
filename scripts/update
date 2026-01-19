@@ -1,0 +1,47 @@
+#!/bin/bash
+# Update NEMF Review on production server
+# Run this from the app directory: scripts/update
+
+set -e
+
+echo "=== NEMF Review Update ==="
+echo ""
+
+# Check we're in the right directory
+if [ ! -f "app/server.py" ]; then
+    echo "Error: Must run from nemf-review directory"
+    echo "Usage: cd /var/www/nemf-review && scripts/update"
+    exit 1
+fi
+
+# Pull latest changes
+echo "Pulling latest changes from GitHub..."
+git pull origin main
+echo ""
+
+# Activate virtual environment and update dependencies
+echo "Updating Python dependencies..."
+source venv/bin/activate
+pip install -q -r requirements.txt
+echo ""
+
+# Restart the service
+echo "Restarting nemf-review service..."
+sudo systemctl restart nemf-review
+sleep 2
+echo ""
+
+# Check status
+echo "Service status:"
+sudo systemctl status nemf-review --no-pager -l
+echo ""
+
+# Show recent logs
+echo "Recent logs (last 10 lines):"
+sudo journalctl -u nemf-review -n 10 --no-pager
+echo ""
+
+echo "=== Update Complete ==="
+echo ""
+echo "Service is running. To view live logs:"
+echo "  sudo journalctl -u nemf-review -f"
