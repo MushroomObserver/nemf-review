@@ -11,6 +11,11 @@ from functools import wraps
 from pathlib import Path
 from threading import Lock
 
+# Add app directory to path for imports
+# This allows importing mo_api_client from the same directory
+# For a production package, this would be handled by proper package structure
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 import requests
 from flask import Flask, render_template, jsonify, request, send_from_directory, Response
 
@@ -22,6 +27,7 @@ data_file = None
 images_dir = None
 all_names = None
 all_locations = None
+mo_base_url = 'https://mushroomobserver.org'  # MO API base URL (configurable)
 
 # Locking state
 claims = {}  # {filename: {"user": username, "claimed_at": datetime, "heartbeat": datetime}}
@@ -84,6 +90,49 @@ def get_current_user():
     """Get the current authenticated username."""
     auth = request.authorization
     return auth.username if auth else None
+
+
+# Helper functions for MO API response parsing
+def extract_image_id(response):
+    """
+    Extract image ID from MO API response.
+
+    MO API returns {"results": [1234]} where 1234 is the image ID.
+    Handles different response formats defensively.
+    """
+    from mo_api_client import MOAPIError
+
+    if 'results' in response and isinstance(response['results'], list):
+        if not response['results']:
+            raise MOAPIError("Empty results array in image upload response")
+        return response['results'][0]  # ID is directly in array
+    elif 'id' in response:
+        return response['id']
+    else:
+        raise MOAPIError(f"Could not extract image ID from response: {response}")
+
+
+def extract_observation_id(response):
+    """
+    Extract observation ID from MO API response.
+
+    MO API returns {"results": [{"id": 123, ...}]} for observations.
+    Handles both object and integer formats.
+    """
+    from mo_api_client import MOAPIError
+
+    if 'results' in response and isinstance(response['results'], list):
+        if not response['results']:
+            raise MOAPIError("Empty results array in observation response")
+        first_result = response['results'][0]
+        if isinstance(first_result, dict):
+            return first_result['id']
+        else:
+            return first_result  # In case it's just an ID
+    elif 'id' in response:
+        return response['id']
+    else:
+        raise MOAPIError(f"Could not extract observation ID from response: {response}")
 
 
 # Claim/Locking functions
@@ -648,11 +697,11 @@ def api_verify_mo_id():
     try:
         # Call MO API to verify the ID exists
         if id_type == 'observation':
-            url = f'https://mushroomobserver.org/api2/observations/{id_value}'
+            url = f'{mo_base_url}/api2/observations/{id_value}'
         else:
-            url = f'https://mushroomobserver.org/api2/images/{id_value}'
+            url = f'{mo_base_url}/api2/images/{id_value}'
 
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, timeout=10, headers={'Accept': 'application/json'})
 
         if response.status_code == 200:
             return jsonify({'exists': True, 'id': id_value, 'type': id_type})
@@ -742,6 +791,261 @@ def api_update_settings():
     return jsonify({'success': True})
 
 
+# Phase 4 & 5: MO API Integration Routes
+@app.route('/api/mo/add_to_existing', methods=['POST'])
+@requires_auth
+def api_mo_add_to_existing():
+    """
+    Add image to existing observation (Phase 4).
+
+    Request body:
+    {
+        "filename": "IMG_1234.jpg",
+        "observation_id": 123456,
+        "field_code": "NEMF-12345",
+        "project_id": 42
+    }
+    """
+    from mo_api_client import MOAPIClient, MOAPIError, MOAPIConflictError
+
+    username = get_current_user()
+    user_data = users.get(username, {})
+    api_key = user_data.get('api_key')
+
+    if not api_key:
+        return jsonify({
+            'error': 'No API key configured. Please set your API key in Settings.'
+        }), 400
+
+    data = request.json
+    filename = data.get('filename')
+    observation_id = data.get('observation_id')
+    field_code = data.get('field_code')
+    project_id = data.get('project_id')
+
+    if not filename or not observation_id:
+        return jsonify({'error': 'filename and observation_id required'}), 400
+
+    # Validate observation_id is a positive integer
+    try:
+        observation_id = int(observation_id)
+        if observation_id <= 0:
+            raise ValueError("observation_id must be positive")
+    except (TypeError, ValueError) as e:
+        return jsonify({'error': f'Invalid observation_id: must be a positive integer'}), 400
+
+    if filename not in review_data['images']:
+        return jsonify({'error': 'Image not found'}), 404
+
+    # Verify user has claim
+    claim = get_claim(filename)
+    if claim and claim['user'] != username:
+        return jsonify({
+            'error': f'Image is claimed by {claim["user"]}'
+        }), 409
+
+    try:
+        client = MOAPIClient(api_key, base_url=mo_base_url)
+
+        # Step 1: Verify observation exists
+        if not client.verify_observation_exists(observation_id):
+            return jsonify({
+                'error': f'Observation {observation_id} not found on MO'
+            }), 404
+
+        # Step 2: Upload image
+        img_path = images_dir / filename
+        copyright_holder = username  # Use reviewer's username
+        upload_result = client.upload_image(
+            str(img_path),
+            copyright_holder=copyright_holder,
+            notes=f"Field slip: {field_code}" if field_code else "",
+            original_name=filename
+        )
+
+        # Extract image ID from response
+        image_id = extract_image_id(upload_result)
+
+        # Step 3: Add image to observation
+        client.add_image_to_observation(observation_id, image_id)
+
+        # Step 4: Update observation notes with field slip code
+        if field_code:
+            notes_update = f"Field slip: {field_code}"
+            client.update_observation_notes(observation_id, notes_update)
+
+        # Step 5: Create or link field slip
+        field_slip_result = None
+        if field_code:
+            try:
+                field_slip_result = client.create_or_link_field_slip(
+                    field_code,
+                    observation_id,
+                    project_id
+                )
+            except MOAPIConflictError as e:
+                # Log conflict but don't fail the operation
+                # Image is already uploaded and linked
+                print(f"Field slip conflict: {e}")
+                field_slip_result = {'warning': str(e)}
+            except MOAPIError as e:
+                # Field slip API might not be implemented yet
+                # Log but don't fail - image is already uploaded
+                print(f"Field slip API error (may not be implemented): {e}")
+                field_slip_result = {'warning': f'Field slip API unavailable: {e}'}
+
+        # Update review data
+        img = review_data['images'][filename]
+        img['review']['mo_image_id'] = image_id
+        img['review']['mo_observation_id'] = observation_id
+        img['review']['uploaded_at'] = datetime.now().isoformat()
+        img['review']['uploaded_by'] = username
+
+        # Release claim
+        release_claim(filename, username)
+        save_data()
+
+        return jsonify({
+            'success': True,
+            'image_id': image_id,
+            'observation_id': observation_id,
+            'field_slip': field_slip_result if field_code else None
+        })
+
+    except MOAPIError as e:
+        return jsonify({'error': str(e)}), 500
+    except Exception as e:
+        return jsonify({'error': f'Unexpected error: {str(e)}'}), 500
+
+
+@app.route('/api/mo/create_new', methods=['POST'])
+@requires_auth
+def api_mo_create_new():
+    """
+    Create new observation (Phase 5).
+
+    Request body:
+    {
+        "filename": "IMG_1234.jpg",
+        "field_code": "NEMF-12345",
+        "date": "2024-09-15",
+        "location_id": 12345,
+        "name_id": 67890,
+        "notes": "Additional notes",
+        "project_id": 42
+    }
+    """
+    from mo_api_client import MOAPIClient, MOAPIError, MOAPIConflictError
+
+    username = get_current_user()
+    user_data = users.get(username, {})
+    api_key = user_data.get('api_key')
+
+    if not api_key:
+        return jsonify({
+            'error': 'No API key configured. Please set your API key in Settings.'
+        }), 400
+
+    data = request.json
+    filename = data.get('filename')
+    field_code = data.get('field_code')
+    date = data.get('date')
+    location_id = data.get('location_id')
+    name_id = data.get('name_id')
+    notes = data.get('notes', '')
+    project_id = data.get('project_id')
+
+    if not filename or not date:
+        return jsonify({'error': 'filename and date required'}), 400
+
+    if filename not in review_data['images']:
+        return jsonify({'error': 'Image not found'}), 404
+
+    # Verify user has claim
+    claim = get_claim(filename)
+    if claim and claim['user'] != username:
+        return jsonify({
+            'error': f'Image is claimed by {claim["user"]}'
+        }), 409
+
+    try:
+        client = MOAPIClient(api_key, base_url=mo_base_url)
+
+        # Step 1: Upload image
+        img_path = images_dir / filename
+        copyright_holder = username
+        upload_result = client.upload_image(
+            str(img_path),
+            copyright_holder=copyright_holder,
+            notes=f"Field slip: {field_code}" if field_code else "",
+            original_name=filename
+        )
+
+        # Extract image ID from response
+        image_id = extract_image_id(upload_result)
+
+        # Step 2: Create observation with field slip in notes
+        obs_notes = notes
+        if field_code:
+            field_slip_note = f"Field slip: {field_code}"
+            obs_notes = f"{field_slip_note}\n\n{notes}" if notes else field_slip_note
+
+        obs_result = client.create_observation(
+            date=date,
+            location_id=location_id,
+            name_id=name_id,
+            notes=obs_notes,
+            image_ids=[image_id]
+        )
+
+        # Extract observation ID from response
+        observation_id = extract_observation_id(obs_result)
+
+        # Step 3: Create field slip
+        field_slip_result = None
+        if field_code:
+            try:
+                field_slip_result = client.create_field_slip(
+                    field_code,
+                    observation_id,
+                    project_id
+                )
+            except MOAPIConflictError as e:
+                # Field slip code already exists - this is a real error for new observations
+                return jsonify({
+                    'error': f'Field slip code {field_code} already exists. '
+                           f'Please use a different code or add to existing observation.'
+                }), 409
+            except MOAPIError as e:
+                # Field slip API might not be implemented yet
+                # Log but don't fail - observation is already created
+                print(f"Field slip API error (may not be implemented): {e}")
+                field_slip_result = {'warning': f'Field slip API unavailable: {e}'}
+
+        # Update review data
+        img = review_data['images'][filename]
+        img['review']['mo_image_id'] = image_id
+        img['review']['mo_observation_id'] = observation_id
+        img['review']['uploaded_at'] = datetime.now().isoformat()
+        img['review']['uploaded_by'] = username
+
+        # Release claim
+        release_claim(filename, username)
+        save_data()
+
+        return jsonify({
+            'success': True,
+            'image_id': image_id,
+            'observation_id': observation_id,
+            'field_slip': field_slip_result if field_code else None
+        })
+
+    except MOAPIError as e:
+        return jsonify({'error': str(e)}), 500
+    except Exception as e:
+        return jsonify({'error': f'Unexpected error: {str(e)}'}), 500
+
+
 def create_app(data_path='review_data.json', users_path='users.json'):
     """Factory function to create and configure the app."""
     load_data(data_path)
@@ -750,17 +1054,25 @@ def create_app(data_path='review_data.json', users_path='users.json'):
 
 
 def main():
+    global mo_base_url
+
     import argparse
     parser = argparse.ArgumentParser(description='NEMF Photo Review Server')
     parser.add_argument('--port', type=int, default=5001, help='Port to run on')
     parser.add_argument('--data', default='review_data.json', help='Review data file')
     parser.add_argument('--users', default='users.json', help='Users file')
     parser.add_argument('--host', default='127.0.0.1', help='Host to bind to')
+    parser.add_argument('--mo-url', default='https://mushroomobserver.org',
+                        help='Mushroom Observer base URL (default: production)')
     args = parser.parse_args()
 
     if not os.path.exists(args.data):
         print(f"Error: {args.data} not found")
         sys.exit(1)
+
+    # Set MO base URL
+    mo_base_url = args.mo_url
+    print(f"MO API URL: {mo_base_url}")
 
     print(f"Loading data from {args.data}...")
     load_data(args.data)
