@@ -104,7 +104,9 @@ class MOAPIClient:
                 try:
                     json_response = response.json()
                 except ValueError:
-                    pass
+                    # Non-JSON response (e.g., HTML error page)
+                    # Leave json_response as None to skip error checking
+                    json_response = None
 
             # Check for errors in response body (MO API format)
             if json_response and 'errors' in json_response:
@@ -232,25 +234,26 @@ class MOAPIClient:
         # Prepare multipart form data
         # Note: parameter name is 'upload', not 'upload_file'
         # 'upload_file' is for server-side file paths, 'upload' is for HTTP uploads
-        files = {
-            'upload': (
-                path.name,
-                open(path, 'rb'),
-                mimetypes.guess_type(path)[0] or 'image/jpeg'
-            )
-        }
+        with open(path, 'rb') as image_file:
+            files = {
+                'upload': (
+                    path.name,
+                    image_file,
+                    mimetypes.guess_type(path)[0] or 'image/jpeg'
+                )
+            }
 
-        data = {
-            'api_key': self.api_key,  # For file uploads, API key goes in form data
-            'copyright_holder': copyright_holder,
-            'license': license,
-            'notes': notes,
-            'original_name': original_name or path.name,
-            **metadata
-        }
+            data = {
+                'api_key': self.api_key,  # For file uploads, API key goes in form data
+                'copyright_holder': copyright_holder,
+                'license': license,
+                'notes': notes,
+                'original_name': original_name or path.name,
+                **metadata
+            }
 
-        # Don't use auth header for file uploads - API key is in form data
-        return self._request('POST', '/api2/images', data=data, files=files, skip_auth=True)
+            # Don't use auth header for file uploads - API key is in form data
+            return self._request('POST', '/api2/images', data=data, files=files, skip_auth=True)
 
     def create_observation(
         self,

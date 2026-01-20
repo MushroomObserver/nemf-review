@@ -38,3 +38,8 @@ Thumbs.db
 # Local planning docs
 DEPLOYMENT_PLAN.md
 clarifications.txt
+
+# Local test scripts
+img-add.zsh
+obs-create.zsh
+backend-tests.zsh

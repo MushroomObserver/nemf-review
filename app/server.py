@@ -12,6 +12,8 @@ from pathlib import Path
 from threading import Lock
 
 # Add app directory to path for imports
+# This allows importing mo_api_client from the same directory
+# For a production package, this would be handled by proper package structure
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import requests
@@ -88,6 +90,49 @@ def get_current_user():
     """Get the current authenticated username."""
     auth = request.authorization
     return auth.username if auth else None
+
+
+# Helper functions for MO API response parsing
+def extract_image_id(response):
+    """
+    Extract image ID from MO API response.
+
+    MO API returns {"results": [1234]} where 1234 is the image ID.
+    Handles different response formats defensively.
+    """
+    from mo_api_client import MOAPIError
+
+    if 'results' in response and isinstance(response['results'], list):
+        if not response['results']:
+            raise MOAPIError("Empty results array in image upload response")
+        return response['results'][0]  # ID is directly in array
+    elif 'id' in response:
+        return response['id']
+    else:
+        raise MOAPIError(f"Could not extract image ID from response: {response}")
+
+
+def extract_observation_id(response):
+    """
+    Extract observation ID from MO API response.
+
+    MO API returns {"results": [{"id": 123, ...}]} for observations.
+    Handles both object and integer formats.
+    """
+    from mo_api_client import MOAPIError
+
+    if 'results' in response and isinstance(response['results'], list):
+        if not response['results']:
+            raise MOAPIError("Empty results array in observation response")
+        first_result = response['results'][0]
+        if isinstance(first_result, dict):
+            return first_result['id']
+        else:
+            return first_result  # In case it's just an ID
+    elif 'id' in response:
+        return response['id']
+    else:
+        raise MOAPIError(f"Could not extract observation ID from response: {response}")
 
 
 # Claim/Locking functions
@@ -781,6 +826,14 @@ def api_mo_add_to_existing():
     if not filename or not observation_id:
         return jsonify({'error': 'filename and observation_id required'}), 400
 
+    # Validate observation_id is a positive integer
+    try:
+        observation_id = int(observation_id)
+        if observation_id <= 0:
+            raise ValueError("observation_id must be positive")
+    except (TypeError, ValueError) as e:
+        return jsonify({'error': f'Invalid observation_id: must be a positive integer'}), 400
+
     if filename not in review_data['images']:
         return jsonify({'error': 'Image not found'}), 404
 
@@ -811,14 +864,7 @@ def api_mo_add_to_existing():
         )
 
         # Extract image ID from response
-        # MO API returns {"results": [1234]} where 1234 is the image ID
-        if 'results' in upload_result and isinstance(upload_result['results'], list):
-            image_id = upload_result['results'][0]  # ID is directly in array, not nested in object
-        elif 'id' in upload_result:
-            image_id = upload_result['id']
-        else:
-            print(f"Unexpected upload response: {upload_result}")
-            raise MOAPIError(f"Could not extract image ID from upload response: {upload_result}")
+        image_id = extract_image_id(upload_result)
 
         # Step 3: Add image to observation
         client.add_image_to_observation(observation_id, image_id)
@@ -936,14 +982,7 @@ def api_mo_create_new():
         )
 
         # Extract image ID from response
-        # MO API returns {"results": [1234]} where 1234 is the image ID
-        if 'results' in upload_result and isinstance(upload_result['results'], list):
-            image_id = upload_result['results'][0]  # ID is directly in array, not nested in object
-        elif 'id' in upload_result:
-            image_id = upload_result['id']
-        else:
-            print(f"Unexpected upload response: {upload_result}")
-            raise MOAPIError(f"Could not extract image ID from upload response: {upload_result}")
+        image_id = extract_image_id(upload_result)
 
         # Step 2: Create observation with field slip in notes
         obs_notes = notes
@@ -960,17 +999,7 @@ def api_mo_create_new():
         )
 
         # Extract observation ID from response
-        # MO API returns {"results": [{"id": 123, ...}]} for observations
-        if 'results' in obs_result and isinstance(obs_result['results'], list):
-            if isinstance(obs_result['results'][0], dict):
-                observation_id = obs_result['results'][0]['id']
-            else:
-                observation_id = obs_result['results'][0]  # In case it's just an ID
-        elif 'id' in obs_result:
-            observation_id = obs_result['id']
-        else:
-            print(f"Unexpected observation response: {obs_result}")
-            raise MOAPIError(f"Could not extract observation ID from response: {obs_result}")
+        observation_id = extract_observation_id(obs_result)
 
         # Step 3: Create field slip
         field_slip_result = None
