@@ -353,7 +353,12 @@ class MOAPIClient:
         """
         # Get current observation to append notes
         obs = self.get_observation(observation_id)
-        current_notes = obs.get('notes', '')
+
+        # Handle case where API returns just an ID instead of full object
+        if not isinstance(obs, dict):
+            current_notes = ''
+        else:
+            current_notes = obs.get('notes', '')
 
         # Append new notes
         if current_notes:
@@ -503,7 +508,16 @@ class MOAPIClient:
         existing = self.get_field_slip_by_code(code)
 
         if existing:
-            existing_obs_id = existing.get('observation_id')
+            # Handle case where API returns just an ID instead of full object
+            if isinstance(existing, dict):
+                existing_obs_id = existing.get('observation_id')
+            else:
+                # If API returned just an ID, we can't determine observation linkage
+                # Treat as not found to avoid conflict errors
+                existing = None
+                existing_obs_id = None
+
+        if existing and existing_obs_id:
 
             if existing_obs_id == observation_id:
                 # Already linked correctly

@@ -213,6 +213,33 @@
             font-size: 12px;
         }
         .existing-obs a { color: #74b9ff; }
+        .linked-image-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 4px 8px;
+            background: #2d3436;
+            border-radius: 3px;
+            margin-bottom: 4px;
+        }
+        .linked-image-name {
+            flex: 1;
+            font-size: 12px;
+            color: #4ecca3;
+        }
+        .btn-unlink {
+            background: #ff6b6b;
+            color: #fff;
+            border: none;
+            border-radius: 3px;
+            padding: 2px 8px;
+            font-size: 10px;
+            cursor: pointer;
+            margin-left: 8px;
+        }
+        .btn-unlink:hover {
+            opacity: 0.8;
+        }
         .actions {
             display: flex;
             gap: 10px;
@@ -235,6 +262,11 @@
         .btn-discard { background: #ff6b6b; color: #fff; }
         .btn-skip { background: #555; color: #fff; }
         .btn-already-on-mo { background: #74b9ff; color: #000; }
+        .btn-mo-phase4 { background: #a29bfe; color: #000; }
+        .btn-mo-phase5 { background: #fd79a8; color: #000; }
+        .mo-status-success { background: #4ecca3; color: #000; }
+        .mo-status-error { background: #ff6b6b; color: #fff; }
+        .mo-status-loading { background: #feca57; color: #000; }
         .nav-buttons {
             display: flex;
             gap: 10px;
@@ -256,6 +288,20 @@
         .status-corrected { background: #feca57; color: #000; }
         .status-discarded { background: #ff6b6b; color: #fff; }
         .status-already_on_mo { background: #74b9ff; color: #000; }
+        .uploaded-warning {
+            background: #fd79a8;
+            color: #000;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            font-weight: bold;
+            font-size: 13px;
+            border: 2px solid #e84393;
+        }
+        .uploaded-warning a {
+            color: #000;
+            text-decoration: underline;
+        }
         /* Zoom modal */
         .zoom-modal {
             display: none;
@@ -615,6 +661,22 @@
                 </div>
             </div>
 
+            <div class="section" id="moUploadSection">
+                <h3>Upload to MO</h3>
+                <div id="alreadyUploadedWarning" class="uploaded-warning" style="display: none;">
+                    ⚠️ This image has already been uploaded to MO
+                </div>
+                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                    <button class="btn-mo-phase4" onclick="openPhase4Modal()" style="flex: 1;">
+                        Add to Existing Observation
+                    </button>
+                    <button class="btn-mo-phase5" onclick="uploadPhase5()" style="flex: 1;">
+                        Create New Observation
+                    </button>
+                </div>
+                <div id="moUploadStatus" style="display: none; padding: 10px; border-radius: 4px; font-size: 12px; margin-top: 10px;"></div>
+            </div>
+
             <div class="actions">
                 <button class="btn-approve" onclick="submitReview('approved')">
                     Approve
@@ -714,6 +776,25 @@
             <div style="display: flex; gap: 10px; margin-top: 20px;">
                 <button class="btn-approve" onclick="submitAlreadyOnMO()">Submit</button>
                 <button class="btn-skip" onclick="closeAlreadyOnMOModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Phase 4 modal - Add to Existing Observation -->
+    <div class="modal" id="phase4Modal">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <h2>Add to Existing Observation</h2>
+            <p style="font-size: 13px; color: #888;">
+                Upload this image to an existing MO observation.
+            </p>
+            <div class="field">
+                <label>Observation ID</label>
+                <input type="text" id="phase4ObsId" placeholder="Enter observation ID (e.g., 625778)" onkeyup="if(event.key==='Enter') uploadPhase4()">
+            </div>
+            <div id="phase4Status" style="display: none; padding: 10px; border-radius: 4px; font-size: 12px; margin-top: 10px;"></div>
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button class="btn-mo-phase4" onclick="uploadPhase4()">Upload</button>
+                <button class="btn-skip" onclick="closePhase4Modal()">Cancel</button>
             </div>
         </div>
     </div>
@@ -1137,7 +1218,7 @@
             const linkedList = document.getElementById('linkedImagesList');
             if (rev.linked_images && rev.linked_images.length > 0) {
                 linkedField.style.display = 'block';
-                linkedList.textContent = rev.linked_images.join(', ');
+                renderLinkedImages(rev.linked_images);
             } else {
                 linkedField.style.display = 'none';
             }
@@ -1153,6 +1234,26 @@
                 badge.innerHTML = `<span class="status-badge status-${rev.status}">${badgeText}</span>`;
             } else {
                 badge.innerHTML = '';
+            }
+
+            // MO Observation link (for Phase 4/5 uploaded images)
+            const moObsContainer = document.getElementById('reviewExistingObsContainer');
+            const moObsDiv = document.getElementById('reviewExistingObs');
+            if (rev.mo_observation_id && rev.mo_observation_url) {
+                moObsContainer.style.display = 'block';
+                moObsDiv.innerHTML = `<a href="${rev.mo_observation_url}" target="_blank">Observation #${rev.mo_observation_id}</a> (Image #${rev.mo_image_id || 'N/A'})`;
+            } else if (rev.status !== 'already_on_mo') {
+                // Only hide if not showing "already_on_mo" field slip lookup
+                moObsContainer.style.display = 'none';
+            }
+
+            // Show uploaded warning
+            const uploadWarning = document.getElementById('alreadyUploadedWarning');
+            if (rev.mo_observation_id && rev.mo_observation_url) {
+                uploadWarning.style.display = 'block';
+                uploadWarning.innerHTML = `⚠️ Already uploaded to <a href="${rev.mo_observation_url}" target="_blank">Observation #${rev.mo_observation_id}</a> (Image #${rev.mo_image_id})`;
+            } else {
+                uploadWarning.style.display = 'none';
             }
 
             // Load adjacent images
@@ -1301,9 +1402,8 @@
 
             // Update linked images display
             const linkedField = document.getElementById('linkedImagesField');
-            const linkedList = document.getElementById('linkedImagesList');
             linkedField.style.display = 'block';
-            linkedList.textContent = linkedImages.join(', ');
+            renderLinkedImages(linkedImages);
 
             closePeek();
         }
@@ -1475,6 +1575,7 @@
                 closeZoom();
                 closePeek();
                 closeAlreadyOnMOModal();
+                closePhase4Modal();
                 closeSettings();
                 closeClaimConflict();
 
@@ -1701,6 +1802,308 @@
             }
         }
 
+        // Phase 4 - Add to Existing Observation
+        function openPhase4Modal() {
+            if (!currentImage) return;
+            document.getElementById('phase4Modal').classList.add('active');
+            document.getElementById('phase4ObsId').value = '';
+            document.getElementById('phase4Status').style.display = 'none';
+            document.getElementById('phase4ObsId').focus();
+        }
+
+        function closePhase4Modal() {
+            document.getElementById('phase4Modal').classList.remove('active');
+        }
+
+        async function uploadPhase4() {
+            if (!currentImage) return;
+
+            const obsId = document.getElementById('phase4ObsId').value.trim();
+            if (!obsId) {
+                alert('Please enter an observation ID');
+                return;
+            }
+
+            // Check if already uploaded
+            const rev = currentImage.review;
+            if (rev.mo_observation_id && rev.mo_observation_url) {
+                const message = `This image has already been uploaded to Observation #${rev.mo_observation_id} (Image #${rev.mo_image_id}).\n\n` +
+                    `Are you sure you want to upload it again? This will create a duplicate image on MO.`;
+                if (!confirm(message)) {
+                    return;
+                }
+            }
+
+            const statusEl = document.getElementById('phase4Status');
+            statusEl.style.display = 'block';
+            statusEl.className = 'mo-status-loading';
+            statusEl.textContent = 'Uploading image to MO...';
+
+            const uploadData = {
+                filename: currentImage.filename,
+                observation_id: parseInt(obsId),
+                field_code: document.getElementById('reviewFieldCode').value.trim(),
+                project_id: 389
+            };
+
+            try {
+                const response = await fetch(
+                    '/api/mo/add_to_existing',
+                    {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(uploadData)
+                    }
+                );
+
+                const data = await response.json();
+
+                if (data.success) {
+                    const imageCount = data.uploaded_images ? data.uploaded_images.length : 1;
+                    const imageText = imageCount === 1 ? '1 image' : `${imageCount} images`;
+
+                    statusEl.className = 'mo-status-success';
+                    statusEl.innerHTML = `✓ Success! Uploaded ${imageText}<br>` +
+                        `<a href="${data.observation_url}" target="_blank" style="color: #000; text-decoration: underline;">View Observation #${data.observation_id}</a>`;
+
+                    // Submit review with MO metadata
+                    const reviewResult = await submitReviewWithMOData(
+                        data.observation_id,
+                        data.image_id,
+                        data.observation_url
+                    );
+
+                    setTimeout(() => {
+                        closePhase4Modal();
+                        if (reviewResult && reviewResult.summary) {
+                            updateSummary(reviewResult.summary);
+                        }
+                        nextImage();
+                    }, 1500);
+                } else {
+                    statusEl.className = 'mo-status-error';
+                    statusEl.textContent = '✗ Error: ' + (data.error || 'Unknown error');
+                }
+            } catch (error) {
+                statusEl.className = 'mo-status-error';
+                statusEl.textContent = '✗ Error: ' + error.message;
+            }
+        }
+
+        // Phase 5 - Create New Observation
+        async function uploadPhase5() {
+            if (!currentImage) return;
+
+            const dateSelect = document.getElementById('reviewDate');
+            let date = dateSelect.value;
+            if (date === 'other') {
+                date = document.getElementById('reviewDateCustom').value;
+            }
+
+            if (!date) {
+                alert('Please select or enter a date');
+                return;
+            }
+
+            // Check if already uploaded
+            const rev = currentImage.review;
+            if (rev.mo_observation_id && rev.mo_observation_url) {
+                const message = `This image has already been uploaded to Observation #${rev.mo_observation_id} (Image #${rev.mo_image_id}).\n\n` +
+                    `Are you sure you want to upload it again? This will create a duplicate image on MO.`;
+                if (!confirm(message)) {
+                    return;
+                }
+            }
+
+            const statusEl = document.getElementById('moUploadStatus');
+            statusEl.style.display = 'block';
+            statusEl.className = 'mo-status-loading';
+            statusEl.textContent = 'Creating new observation on MO...';
+
+            const uploadData = {
+                filename: currentImage.filename,
+                field_code: document.getElementById('reviewFieldCode').value.trim(),
+                date: date,
+                location_id: parseInt(document.getElementById('reviewLocationId').value) || null,
+                name_id: parseInt(document.getElementById('reviewNameId').value) || null,
+                notes: document.getElementById('reviewNotes').value.trim(),
+                project_id: 389
+            };
+
+            try {
+                const response = await fetch(
+                    '/api/mo/create_new',
+                    {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(uploadData)
+                    }
+                );
+
+                const data = await response.json();
+
+                if (data.success) {
+                    const imageCount = data.uploaded_images ? data.uploaded_images.length : 1;
+                    const imageText = imageCount === 1 ? '1 image' : `${imageCount} images`;
+
+                    statusEl.className = 'mo-status-success';
+                    statusEl.innerHTML = `✓ Success! Created observation with ${imageText}<br>` +
+                        `<a href="${data.observation_url}" target="_blank" style="color: #000; text-decoration: underline;">View Observation #${data.observation_id}</a>`;
+
+                    // Submit review with MO metadata
+                    const reviewResult = await submitReviewWithMOData(
+                        data.observation_id,
+                        data.image_id,
+                        data.observation_url
+                    );
+
+                    setTimeout(() => {
+                        if (reviewResult && reviewResult.summary) {
+                            updateSummary(reviewResult.summary);
+                        }
+                        nextImage();
+                    }, 1500);
+                } else {
+                    statusEl.className = 'mo-status-error';
+                    statusEl.textContent = '✗ Error: ' + (data.error || 'Unknown error');
+                }
+            } catch (error) {
+                statusEl.className = 'mo-status-error';
+                statusEl.textContent = '✗ Error: ' + error.message;
+            }
+        }
+
+        // Submit review with MO observation/image metadata
+        async function submitReviewWithMOData(observationId, imageId, observationUrl) {
+            if (!currentImage) return;
+
+            const dateSelect = document.getElementById('reviewDate');
+            let date = dateSelect.value;
+            if (date === 'other') {
+                date = document.getElementById('reviewDateCustom').value;
+            }
+
+            // Determine if corrections were made
+            const src = currentImage.source;
+            const fieldCode = document.getElementById('reviewFieldCode').value;
+            const location = document.getElementById('reviewLocation').value;
+            const name = document.getElementById('reviewName').value;
+
+            const hasCorrections = (
+                fieldCode !== (src.field_code || '') ||
+                date !== (src.date || '') ||
+                location !== (src.location || '') ||
+                name !== (src.name || '')
+            );
+
+            const finalStatus = hasCorrections ? 'corrected' : 'approved';
+
+            const reviewData = {
+                status: finalStatus,
+                field_code: fieldCode,
+                date: date,
+                location: location,
+                location_id: document.getElementById('reviewLocationId').value || null,
+                name: name,
+                name_id: document.getElementById('reviewNameId').value || null,
+                notes: document.getElementById('reviewNotes').value,
+                linked_images: currentImage.review.linked_images || [],
+                mo_observation_id: observationId,
+                mo_image_id: imageId,
+                mo_observation_url: observationUrl
+            };
+
+            const response = await fetch(
+                `/api/image/${encodeURIComponent(currentImage.filename)}/review`,
+                {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(reviewData)
+                }
+            );
+
+            const data = await response.json();
+            if (!data.success) {
+                console.error('Failed to save review data:', data.error);
+            }
+            return data;
+        }
+
+        function showMOUploadStatus(type, message) {
+            const statusEl = document.getElementById('moUploadStatus');
+            statusEl.style.display = 'block';
+            statusEl.className = type === 'success' ? 'mo-status-success' : 'mo-status-error';
+            statusEl.textContent = type === 'success' ? '✓ ' + message : '✗ ' + message;
+
+            setTimeout(() => {
+                statusEl.style.display = 'none';
+            }, 5000);
+        }
+
+        // Render linked images with unlink buttons
+        function renderLinkedImages(linkedImages) {
+            const linkedList = document.getElementById('linkedImagesList');
+            linkedList.innerHTML = '';
+
+            if (!linkedImages || linkedImages.length === 0) {
+                return;
+            }
+
+            linkedImages.forEach(filename => {
+                const item = document.createElement('div');
+                item.className = 'linked-image-item';
+
+                const name = document.createElement('span');
+                name.className = 'linked-image-name';
+                name.textContent = filename;
+
+                const unlinkBtn = document.createElement('button');
+                unlinkBtn.className = 'btn-unlink';
+                unlinkBtn.textContent = 'Unlink';
+                unlinkBtn.onclick = () => unlinkImage(filename);
+
+                item.appendChild(name);
+                item.appendChild(unlinkBtn);
+                linkedList.appendChild(item);
+            });
+        }
+
+        // Unlink an image
+        async function unlinkImage(targetFilename) {
+            if (!currentImage) return;
+
+            if (!confirm(`Unlink ${targetFilename} from this image?`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(
+                    `/api/unlink/${encodeURIComponent(currentImage.filename)}`,
+                    {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ target: targetFilename })
+                    }
+                );
+
+                const data = await response.json();
+
+                if (data.success) {
+                    currentImage.review.linked_images = data.linked_images;
+
+                    if (data.linked_images.length > 0) {
+                        renderLinkedImages(data.linked_images);
+                    } else {
+                        document.getElementById('linkedImagesField').style.display = 'none';
+                    }
+                } else {
+                    alert('Failed to unlink: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Failed to unlink: ' + error.message);
+            }
+        }
+
         // Update linkFromImage to check claims first
         const originalLinkFromImage = linkFromImage;
         linkFromImage = async function(sourceFilename) {
@@ -1753,9 +2156,8 @@
             currentImage.review.linked_images = linkedImages;
 
             const linkedField = document.getElementById('linkedImagesField');
-            const linkedList = document.getElementById('linkedImagesList');
             linkedField.style.display = 'block';
-            linkedList.textContent = linkedImages.join(', ');
+            renderLinkedImages(linkedImages);
 
             closePeek();
         };
