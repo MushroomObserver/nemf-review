@@ -17,7 +17,7 @@ from threading import Lock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import requests
-from flask import Flask, render_template, jsonify, request, send_from_directory, Response
+from flask import Flask, render_template, jsonify, request, send_from_directory, Response, session
 
 app = Flask(__name__, template_folder='../templates', static_folder='../static')
 
@@ -751,41 +751,112 @@ def api_lookup_existing_observations():
     return jsonify(results)
 
 
+@app.route('/api/already_on_mo_suggestions')
+@requires_auth
+def api_already_on_mo_suggestions():
+    """Get suggestions for Already on MO: field slip codes and observation IDs."""
+    field_slips = set()
+    observation_ids = set()
+
+    # Collect unique field slip codes and observation IDs from all images
+    for img in review_data['images'].values():
+        src = img.get('source', {})
+
+        # Add field slip code if present
+        field_code = src.get('field_code')
+        if field_code:
+            field_slips.add(field_code)
+
+        # Add observation IDs from existing_observations
+        for obs in src.get('existing_observations', []):
+            obs_id = obs.get('observation_id')
+            if obs_id:
+                observation_ids.add(str(obs_id))
+
+    # Combine and sort: field slips first (alphabetically), then observation IDs (numerically)
+    suggestions = sorted(field_slips) + sorted(observation_ids, key=lambda x: int(x))
+
+    return jsonify({'suggestions': suggestions})
+
+
 @app.route('/api/verify_mo_id')
 @requires_auth
 def api_verify_mo_id():
-    """Verify that an MO observation or image ID exists."""
+    """Verify that an MO observation or field slip exists."""
     id_type = request.args.get('type', '')
     id_value = request.args.get('id', '')
+
+    print(f"DEBUG: Verifying {id_type} = {id_value}")
 
     if not id_type or not id_value:
         return jsonify({'error': 'Missing type or id'}), 400
 
-    if id_type not in ('observation', 'image'):
+    if id_type not in ('observation', 'field_slip'):
         return jsonify({'error': 'Invalid type'}), 400
 
     try:
-        # Call MO API to verify the ID exists
+        from mo_api_client import MOAPIClient, MOAPIError
+
         if id_type == 'observation':
+            # Call MO API to verify the observation exists
             url = f'{mo_base_url}/api2/observations/{id_value}'
-        else:
-            url = f'{mo_base_url}/api2/images/{id_value}'
+            response = requests.get(
+                url,
+                timeout=10,
+                headers={'Accept': 'application/json'}
+            )
 
-        response = requests.get(url, timeout=10, headers={'Accept': 'application/json'})
+            if response.status_code == 200:
+                return jsonify({'exists': True, 'id': id_value, 'type': id_type})
+            elif response.status_code == 404:
+                return jsonify({'exists': False, 'id': id_value, 'type': id_type})
+            else:
+                return jsonify({
+                    'error': f'MO API returned status {response.status_code}'
+                }), 500
 
-        if response.status_code == 200:
-            return jsonify({'exists': True, 'id': id_value, 'type': id_type})
-        elif response.status_code == 404:
-            return jsonify({'exists': False, 'id': id_value, 'type': id_type})
-        else:
-            return jsonify({
-                'error': f'MO API returned status {response.status_code}'
-            }), 500
+        elif id_type == 'field_slip':
+            # Use MOApiClient to check if field slip exists
+            username = get_current_user()
+            user_config = users.get(username)
+            if not user_config:
+                return jsonify({'error': 'User not found'}), 401
+
+            try:
+                print(f"DEBUG: Creating MOAPIClient for field_slip check")
+                client = MOAPIClient(
+                    base_url=mo_base_url,
+                    api_key=user_config.get('api_key')
+                )
+
+                print(f"DEBUG: Calling get_field_slip_by_code({id_value})")
+                field_slip = client.get_field_slip_by_code(id_value)
+                print(f"DEBUG: Field slip result: {field_slip}")
+
+                if field_slip:
+                    print(f"DEBUG: Field slip exists, returning True")
+                    return jsonify({'exists': True, 'id': id_value, 'type': id_type})
+                else:
+                    print(f"DEBUG: Field slip not found, returning False")
+                    return jsonify({'exists': False, 'id': id_value, 'type': id_type})
+            except MOAPIError as e:
+                print(f"ERROR: Field slip verification error: {e}")
+                return jsonify({'error': f'Field slip API error: {str(e)}'}), 500
 
     except requests.Timeout:
+        print(f"ERROR: Request timeout")
         return jsonify({'error': 'Request to MO API timed out'}), 504
     except requests.RequestException as e:
+        print(f"ERROR: Request exception: {e}")
         return jsonify({'error': f'Failed to verify: {str(e)}'}), 500
+    except MOAPIError as e:
+        print(f"ERROR: MOAPIError: {e}")
+        return jsonify({'error': f'MO API error: {str(e)}'}), 500
+    except Exception as e:
+        print(f"ERROR: Unexpected exception: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Verification failed: {str(e)}'}), 500
 
 
 @app.route('/api/adjacent/<path:filename>')

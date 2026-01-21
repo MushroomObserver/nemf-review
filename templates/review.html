@@ -15,7 +15,7 @@
         }
         .container {
             display: grid;
-            grid-template-columns: 1fr 420px;
+            grid-template-columns: 1fr 800px;
             grid-template-rows: auto 1fr;
             height: 100vh;
             gap: 10px;
@@ -134,6 +134,16 @@
             border-radius: 8px;
             padding: 20px;
             overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .two-column-layout {
+            display: grid;
+            grid-template-columns: 350px 400px;
+            gap: 15px;
+        }
+        .left-column, .right-column {
             display: flex;
             flex-direction: column;
             gap: 15px;
@@ -582,67 +592,12 @@
         </div>
 
         <div class="data-panel">
-            <div class="section">
-                <h3>Extracted Data</h3>
-                <div class="field">
-                    <label>Field Slip Code</label>
-                    <div class="value">
-                        <span id="sourceFieldCode">-</span>
-                        <a id="fieldSlipLink" href="#" target="_blank" style="color: #74b9ff; font-size: 12px; margin-left: 10px; display: none;">View on MO</a>
-                    </div>
-                </div>
-                <div class="field">
-                    <label>Date</label>
-                    <div class="value" id="sourceDate">-</div>
-                </div>
-                <div class="field">
-                    <label>
-                        Location
-                        <span class="match-indicator" id="locationMatchIndicator" title=""></span>
-                    </label>
-                    <div class="value" id="sourceLocation">-</div>
-                </div>
-                <div class="field">
-                    <label>
-                        ID (Name)
-                        <span class="match-indicator" id="nameMatchIndicator" title=""></span>
-                    </label>
-                    <div class="value" id="sourceName">-</div>
-                </div>
-                <div class="field">
-                    <label>Notes</label>
-                    <div class="value" id="sourceNotes" style="font-size: 12px; color: #888;">-</div>
-                </div>
-                <div id="existingObsContainer" style="display: none;">
-                    <label style="font-size: 11px; color: #888; text-transform: uppercase;">Existing MO Observation</label>
-                    <div class="existing-obs" id="existingObs"></div>
-                </div>
-
-                <!-- Peek panel for adjacent image -->
-                <div class="peek-panel" id="peekPanel">
-                    <h4>
-                        <span>Peeking: <span id="peekFilename"></span></span>
-                        <button class="btn-close-peek" onclick="closePeek()">✕</button>
-                    </h4>
-                    <div class="peek-data">
-                        <div><strong>Field Code:</strong> <span id="peekFieldCode">-</span> <a id="peekFieldSlipLink" href="#" target="_blank" style="color: #74b9ff; font-size: 11px; display: none;">View on MO</a></div>
-                        <div><strong>Date:</strong> <span id="peekDate">-</span></div>
-                        <div><strong>Location:</strong> <span id="peekLocation">-</span></div>
-                        <div><strong>ID:</strong> <span id="peekName">-</span></div>
-                    </div>
-                    <div class="peek-actions">
-                        <button class="btn-link" onclick="linkFromPeek()">
-                            Link Data to Current Image
-                        </button>
-                        <button class="btn-nav" onclick="switchToPeek()">
-                            Switch to This Image
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <div class="section">
-                <h3>Review / Corrections <span id="statusBadge"></span></h3>
+            <!-- Two-column layout -->
+            <div class="two-column-layout">
+                <!-- Left column: Review/Corrections -->
+                <div class="left-column">
+                    <div class="section">
+                        <h3>Review / Corrections <span id="statusBadge"></span></h3>
                 <div class="field">
                     <label>Field Slip Code <a id="reviewFieldSlipLink" href="#" target="_blank" style="color: #74b9ff; font-size: 11px; display: none;">View on MO</a></label>
                     <div class="field-with-lock">
@@ -709,42 +664,102 @@
                     <label style="font-size: 11px; color: #888; text-transform: uppercase;">Existing MO Observation</label>
                     <div class="existing-obs" id="reviewExistingObs"></div>
                 </div>
-            </div>
-
-            <div class="section" id="moUploadSection">
-                <h3>Upload to MO</h3>
-                <div id="alreadyUploadedWarning" class="uploaded-warning" style="display: none;">
-                    ⚠️ This image has already been uploaded to MO
+                    </div>
                 </div>
-                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-                    <button class="btn-mo-phase4" onclick="openPhase4Modal()" style="flex: 1;">
-                        Add to Existing Observation
-                    </button>
-                    <button class="btn-mo-phase5" onclick="uploadPhase5()" style="flex: 1;">
-                        Create New Observation
-                    </button>
-                </div>
-                <div id="moUploadStatus" style="display: none; padding: 10px; border-radius: 4px; font-size: 12px; margin-top: 10px;"></div>
-            </div>
 
-            <div class="actions">
-                <button class="btn-approve" onclick="submitReview('approved')">
-                    Approve
-                </button>
-                <button class="btn-already-on-mo" onclick="openAlreadyOnMOModal()">
-                    Already on MO
-                </button>
-                <button class="btn-discard" onclick="submitReview('discarded')">
-                    Discard
-                </button>
-                <button class="btn-skip" onclick="nextImage()">
-                    Skip
-                </button>
-            </div>
-            <div class="nav-buttons">
-                <button class="btn-nav" onclick="prevImage()">← Prev</button>
-                <button class="btn-nav" onclick="jumpToImage()">Jump</button>
-                <button class="btn-nav" onclick="nextImage()">Next →</button>
+                <!-- Right column: Nav/Actions/Upload/Peek/Extracted -->
+                <div class="right-column">
+                    <!-- Navigation buttons -->
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn-nav" onclick="prevImage()" style="flex: 1;">← Prev</button>
+                        <button class="btn-nav" onclick="jumpToImage()" style="flex: 1;">Jump</button>
+                        <button class="btn-nav" onclick="nextImage()" style="flex: 1;">Next →</button>
+                    </div>
+
+                    <!-- Action buttons -->
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn-approve" onclick="submitReview('approved')" style="flex: 1;">Approve</button>
+                        <button class="btn-already-on-mo" onclick="openAlreadyOnMOModal()" style="flex: 1;">Already on MO</button>
+                        <button class="btn-discard" onclick="submitReview('discarded')" style="flex: 1;">Discard</button>
+                    </div>
+
+                    <!-- Upload to MO section -->
+                    <div class="section" id="moUploadSection">
+                        <h3>Upload to MO</h3>
+                        <div id="alreadyUploadedWarning" class="uploaded-warning" style="display: none;">
+                            ⚠️ This image has already been uploaded to MO
+                        </div>
+                        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                            <button class="btn-mo-phase4" onclick="openPhase4Modal()" style="flex: 1;">
+                                Add to Existing Observation
+                            </button>
+                            <button class="btn-mo-phase5" onclick="uploadPhase5()" style="flex: 1;">
+                                Create New Observation
+                            </button>
+                        </div>
+                        <div id="moUploadStatus" style="display: none; padding: 10px; border-radius: 4px; font-size: 12px; margin-top: 10px;"></div>
+                    </div>
+
+                    <!-- Peek panel -->
+                    <div class="peek-panel" id="peekPanel">
+                        <h4>
+                            <span>Peeking: <span id="peekFilename"></span></span>
+                            <button class="btn-close-peek" onclick="closePeek()">✕</button>
+                        </h4>
+                        <div class="peek-data">
+                            <div><strong>Field Code:</strong> <span id="peekFieldCode">-</span> <a id="peekFieldSlipLink" href="#" target="_blank" style="color: #74b9ff; font-size: 11px; display: none;">View on MO</a></div>
+                            <div><strong>Date:</strong> <span id="peekDate">-</span></div>
+                            <div><strong>Location:</strong> <span id="peekLocation">-</span></div>
+                            <div><strong>ID:</strong> <span id="peekName">-</span></div>
+                        </div>
+                        <div class="peek-actions">
+                            <button class="btn-link" onclick="linkFromPeek()">
+                                Link Data to Current Image
+                            </button>
+                            <button class="btn-nav" onclick="switchToPeek()">
+                                Switch to This Image
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Extracted Data section -->
+                    <div class="section">
+                        <h3>Extracted Data</h3>
+                        <div class="field">
+                            <label>Field Slip Code</label>
+                            <div class="value">
+                                <span id="sourceFieldCode">-</span>
+                                <a id="fieldSlipLink" href="#" target="_blank" style="color: #74b9ff; font-size: 12px; margin-left: 10px; display: none;">View on MO</a>
+                            </div>
+                        </div>
+                        <div class="field">
+                            <label>Date</label>
+                            <div class="value" id="sourceDate">-</div>
+                        </div>
+                        <div class="field">
+                            <label>
+                                Location
+                                <span class="match-indicator" id="locationMatchIndicator" title=""></span>
+                            </label>
+                            <div class="value" id="sourceLocation">-</div>
+                        </div>
+                        <div class="field">
+                            <label>
+                                ID (Name)
+                                <span class="match-indicator" id="nameMatchIndicator" title=""></span>
+                            </label>
+                            <div class="value" id="sourceName">-</div>
+                        </div>
+                        <div class="field">
+                            <label>Notes</label>
+                            <div class="value" id="sourceNotes" style="font-size: 12px; color: #888;">-</div>
+                        </div>
+                        <div id="existingObsContainer" style="display: none;">
+                            <label style="font-size: 11px; color: #888; text-transform: uppercase;">Existing MO Observation</label>
+                            <div class="existing-obs" id="existingObs"></div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -809,19 +824,10 @@
             <h2>Already on MO</h2>
             <p style="font-size: 13px; color: #888;">
                 This image has already been uploaded to Mushroom Observer.
-                Enter the MO URL or ID to link it.
+                Select or enter an Observation ID (number) or Field Slip Code.
             </p>
-            <div class="radio-group">
-                <div class="radio-option">
-                    <input type="radio" id="moTypeObservation" name="moType" value="observation" checked>
-                    <label for="moTypeObservation">Observation ID</label>
-                </div>
-                <div class="radio-option">
-                    <input type="radio" id="moTypeImage" name="moType" value="image">
-                    <label for="moTypeImage">Image ID</label>
-                </div>
-            </div>
-            <input type="text" class="mo-id-input" id="moIdInput" placeholder="Enter ID or URL (e.g., https://mushroomobserver.org/588804)">
+            <input type="text" class="mo-id-input" id="moIdInput" list="moIdSuggestions" placeholder="Enter Observation ID or Field Slip Code">
+            <datalist id="moIdSuggestions"></datalist>
             <div id="moVerificationStatus" class="verification-status" style="display: none;"></div>
             <div style="display: flex; gap: 10px; margin-top: 20px;">
                 <button class="btn-approve" onclick="submitAlreadyOnMO()">Submit</button>
@@ -1291,8 +1297,11 @@
             if (rev.status) {
                 let badgeText = rev.status;
                 if (rev.status === 'already_on_mo' && rev.mo_id_value) {
-                    const moType = rev.mo_id_type === 'observation' ? 'Obs' : 'Img';
-                    badgeText += ` (${moType} #${rev.mo_id_value})`;
+                    if (rev.mo_id_type === 'observation') {
+                        badgeText += ` (Obs #${rev.mo_id_value})`;
+                    } else if (rev.mo_id_type === 'field_slip') {
+                        badgeText += ` (${rev.mo_id_value})`;
+                    }
                 }
                 badge.innerHTML = `<span class="status-badge status-${rev.status}">${badgeText}</span>`;
             } else {
@@ -1742,12 +1751,39 @@
         }
 
         // Already on MO modal functions
-        function openAlreadyOnMOModal() {
+        async function openAlreadyOnMOModal() {
             document.getElementById('alreadyOnMOModal').classList.add('active');
             document.getElementById('moIdInput').value = '';
-            document.getElementById('moTypeObservation').checked = true;
             document.getElementById('moVerificationStatus').style.display = 'none';
-            document.getElementById('moIdInput').focus();
+
+            // Fetch suggestions for dropdown
+            try {
+                const response = await fetch('/api/already_on_mo_suggestions');
+                const data = await response.json();
+                const suggestions = data.suggestions || [];
+
+                // Populate datalist
+                const datalist = document.getElementById('moIdSuggestions');
+                datalist.innerHTML = '';
+                suggestions.forEach(item => {
+                    const option = document.createElement('option');
+                    option.value = item;
+                    datalist.appendChild(option);
+                });
+
+                // Set default value to first suggestion if available
+                const input = document.getElementById('moIdInput');
+                if (suggestions.length > 0) {
+                    input.value = suggestions[0];
+                }
+
+                input.focus();
+                // Select the text so user can easily replace it
+                input.select();
+            } catch (error) {
+                console.error('Failed to load suggestions:', error);
+                document.getElementById('moIdInput').focus();
+            }
         }
 
         function closeAlreadyOnMOModal() {
@@ -1768,11 +1804,19 @@
 
                 if (data.exists) {
                     statusEl.className = 'verification-status success';
-                    statusEl.textContent = `✓ ${idType === 'observation' ? 'Observation' : 'Image'} #${idValue} exists`;
+                    if (idType === 'observation') {
+                        statusEl.textContent = `✓ Observation #${idValue} exists`;
+                    } else if (idType === 'field_slip') {
+                        statusEl.textContent = `✓ Field Slip "${idValue}" exists`;
+                    }
                     return true;
                 } else {
                     statusEl.className = 'verification-status error';
-                    statusEl.textContent = `✗ ${idType === 'observation' ? 'Observation' : 'Image'} #${idValue} not found`;
+                    if (idType === 'observation') {
+                        statusEl.textContent = `✗ Observation #${idValue} not found`;
+                    } else if (idType === 'field_slip') {
+                        statusEl.textContent = `✗ Field Slip "${idValue}" not found`;
+                    }
                     return false;
                 }
             } catch (error) {
@@ -1783,7 +1827,7 @@
         }
 
         function parseMOIdFromInput(input) {
-            // Parse MO ID from input - can be URL or plain ID
+            // Parse MO ID from input - can be URL, observation ID, or field slip code
             input = input.trim();
 
             // Try to parse as URL
@@ -1792,15 +1836,10 @@
                 if (url.hostname === 'mushroomobserver.org' || url.hostname === 'www.mushroomobserver.org') {
                     const path = url.pathname;
 
-                    // Match patterns like /observations/12345 or /images/12345
+                    // Match patterns like /observations/12345
                     let match = path.match(/\/(observations?)\/(\d+)/i);
                     if (match) {
                         return { type: 'observation', id: match[2] };
-                    }
-
-                    match = path.match(/\/(images?)\/(\d+)/i);
-                    if (match) {
-                        return { type: 'image', id: match[2] };
                     }
 
                     // Match pattern like /588804 (just number in path)
@@ -1813,9 +1852,14 @@
                 // Not a valid URL, continue to try as plain ID
             }
 
-            // Try as plain ID number
+            // If it's all numeric, treat as observation ID
             if (/^\d+$/.test(input)) {
-                return { type: null, id: input };
+                return { type: 'observation', id: input };
+            }
+
+            // Otherwise treat as field slip code
+            if (input.length > 0) {
+                return { type: 'field_slip', id: input };
             }
 
             return null;
@@ -1834,15 +1878,12 @@
             // Parse the input
             const parsed = parseMOIdFromInput(rawInput);
             if (!parsed) {
-                alert('Invalid input. Please enter a valid MO URL or ID number.');
+                alert('Invalid input. Please enter a valid Observation ID or Field Slip Code.');
                 return;
             }
 
-            // If type was detected from URL, use it; otherwise use selected radio button
-            let idType = parsed.type;
-            if (!idType) {
-                idType = document.querySelector('input[name="moType"]:checked').value;
-            }
+            // Type is automatically determined by parseMOIdFromInput
+            const idType = parsed.type;
             const idValue = parsed.id;
 
             // Verify the ID exists
