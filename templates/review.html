@@ -256,11 +256,6 @@
         .status-corrected { background: #feca57; color: #000; }
         .status-discarded { background: #ff6b6b; color: #fff; }
         .status-already_on_mo { background: #74b9ff; color: #000; }
-        .keyboard-hint {
-            font-size: 10px;
-            color: #666;
-            margin-left: 5px;
-        }
         /* Zoom modal */
         .zoom-modal {
             display: none;
@@ -325,8 +320,8 @@
         }
         .btn-link { background: #4ecca3; color: #000; }
         .btn-close-peek { background: #555; color: #fff; flex: 0; padding: 6px 10px; }
-        /* Shortcuts modal */
-        .shortcuts-modal {
+        /* Modal base styles */
+        .modal, .jump-modal {
             display: none;
             position: fixed;
             top: 0;
@@ -338,45 +333,17 @@
             align-items: center;
             justify-content: center;
         }
-        .shortcuts-modal.active { display: flex; }
-        .shortcuts-content {
+        .modal.active, .jump-modal.active { display: flex; }
+        .modal-content, .jump-content {
             background: #16213e;
             padding: 30px;
             border-radius: 12px;
             max-width: 500px;
         }
-        .shortcuts-content h2 { margin-top: 0; }
-        .shortcut-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 8px 0;
-            border-bottom: 1px solid #333;
-        }
-        .shortcut-key {
-            background: #333;
-            padding: 2px 8px;
-            border-radius: 3px;
-            font-family: monospace;
-        }
-        /* Jump modal */
-        .jump-modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.8);
-            z-index: 1000;
-            align-items: center;
-            justify-content: center;
-        }
-        .jump-modal.active { display: flex; }
+        .modal-content h2, .jump-content h2, .jump-content h3 { margin-top: 0; }
         .jump-content {
-            background: #16213e;
-            padding: 20px;
-            border-radius: 12px;
             width: 400px;
+            padding: 20px;
         }
         .jump-content input {
             width: 100%;
@@ -596,11 +563,11 @@
             <div class="section">
                 <h3>Review / Corrections <span id="statusBadge"></span></h3>
                 <div class="field">
-                    <label>Field Slip Code <span class="keyboard-hint">[f]</span> <a id="reviewFieldSlipLink" href="#" target="_blank" style="color: #74b9ff; font-size: 11px; display: none;">View on MO</a></label>
+                    <label>Field Slip Code <a id="reviewFieldSlipLink" href="#" target="_blank" style="color: #74b9ff; font-size: 11px; display: none;">View on MO</a></label>
                     <input type="text" id="reviewFieldCode" placeholder="NEMF-XXXXX" oninput="updateReviewFieldSlipLink()">
                 </div>
                 <div class="field">
-                    <label>Date <span class="keyboard-hint">[1-5]</span></label>
+                    <label>Date</label>
                     <select id="reviewDate">
                         <option value="">-- Select date --</option>
                         <option value="2025-09-17">2025-09-17 (Wed)</option>
@@ -650,22 +617,22 @@
 
             <div class="actions">
                 <button class="btn-approve" onclick="submitReview('approved')">
-                    Approve <span class="keyboard-hint">[a/Enter]</span>
+                    Approve
                 </button>
                 <button class="btn-already-on-mo" onclick="openAlreadyOnMOModal()">
-                    Already on MO <span class="keyboard-hint">[m]</span>
+                    Already on MO
                 </button>
                 <button class="btn-discard" onclick="submitReview('discarded')">
-                    Discard <span class="keyboard-hint">[d]</span>
+                    Discard
                 </button>
                 <button class="btn-skip" onclick="nextImage()">
-                    Skip <span class="keyboard-hint">[s]</span>
+                    Skip
                 </button>
             </div>
             <div class="nav-buttons">
-                <button class="btn-nav" onclick="prevImage()">← Prev <span class="keyboard-hint">[←/p]</span></button>
-                <button class="btn-nav" onclick="jumpToImage()">Jump <span class="keyboard-hint">[j]</span></button>
-                <button class="btn-nav" onclick="nextImage()">Next → <span class="keyboard-hint">[→/n]</span></button>
+                <button class="btn-nav" onclick="prevImage()">← Prev</button>
+                <button class="btn-nav" onclick="jumpToImage()">Jump</button>
+                <button class="btn-nav" onclick="nextImage()">Next →</button>
             </div>
         </div>
     </div>
@@ -674,26 +641,6 @@
     <div class="zoom-modal" id="zoomModal" onclick="closeZoom()">
         <div class="zoom-label" id="zoomLabel"></div>
         <img id="zoomImage" src="">
-    </div>
-
-    <!-- Keyboard shortcuts modal -->
-    <div class="shortcuts-modal" id="shortcutsModal" onclick="closeShortcuts()">
-        <div class="shortcuts-content" onclick="event.stopPropagation()">
-            <h2>Keyboard Shortcuts</h2>
-            <div class="shortcut-row"><span>Approve</span><span><span class="shortcut-key">a</span> or <span class="shortcut-key">Enter</span></span></div>
-            <div class="shortcut-row"><span>Already on MO</span><span class="shortcut-key">m</span></div>
-            <div class="shortcut-row"><span>Discard</span><span class="shortcut-key">d</span></div>
-            <div class="shortcut-row"><span>Skip (next)</span><span class="shortcut-key">s</span></div>
-            <div class="shortcut-row"><span>Next image</span><span><span class="shortcut-key">→</span> or <span class="shortcut-key">n</span></span></div>
-            <div class="shortcut-row"><span>Previous image</span><span><span class="shortcut-key">←</span> or <span class="shortcut-key">p</span></span></div>
-            <div class="shortcut-row"><span>Jump to image</span><span class="shortcut-key">j</span></div>
-            <div class="shortcut-row"><span>Focus field code</span><span class="shortcut-key">f</span></div>
-            <div class="shortcut-row"><span>Select date (Wed-Sun)</span><span><span class="shortcut-key">1</span>-<span class="shortcut-key">5</span></span></div>
-            <div class="shortcut-row"><span>Zoom image</span><span class="shortcut-key">z</span></div>
-            <div class="shortcut-row"><span>Show shortcuts</span><span class="shortcut-key">?</span></div>
-            <div class="shortcut-row"><span>Close modal / Cancel peek</span><span class="shortcut-key">Esc</span></div>
-            <p style="margin-top: 20px; color: #888; font-size: 12px;">Click adjacent images to peek at their data without leaving current image.</p>
-        </div>
     </div>
 
     <!-- Jump to image modal -->
@@ -706,8 +653,8 @@
     </div>
 
     <!-- Settings modal -->
-    <div class="shortcuts-modal" id="settingsModal">
-        <div class="shortcuts-content" onclick="event.stopPropagation()">
+    <div class="modal" id="settingsModal">
+        <div class="modal-content" onclick="event.stopPropagation()">
             <h2>Settings</h2>
             <div class="field">
                 <label>Username</label>
@@ -732,8 +679,8 @@
     </div>
 
     <!-- Claim conflict modal -->
-    <div class="shortcuts-modal" id="claimConflictModal">
-        <div class="shortcuts-content" onclick="event.stopPropagation()">
+    <div class="modal" id="claimConflictModal">
+        <div class="modal-content" onclick="event.stopPropagation()">
             <h2 style="color: #ff6b6b;">Cannot Claim Image</h2>
             <p id="claimConflictMessage">This image is being reviewed by another user.</p>
             <div id="claimConflictDetails" style="margin-top: 15px;"></div>
@@ -745,8 +692,8 @@
     </div>
 
     <!-- Already on MO modal -->
-    <div class="shortcuts-modal" id="alreadyOnMOModal">
-        <div class="shortcuts-content" onclick="event.stopPropagation()">
+    <div class="modal" id="alreadyOnMOModal">
+        <div class="modal-content" onclick="event.stopPropagation()">
             <h2>Already on MO</h2>
             <p style="font-size: 13px; color: #888;">
                 This image has already been uploaded to Mushroom Observer.
@@ -1514,93 +1461,27 @@
             `).join('');
         }
 
-        function showShortcuts() {
-            document.getElementById('shortcutsModal').classList.add('active');
-        }
-
-        function closeShortcuts() {
-            document.getElementById('shortcutsModal').classList.remove('active');
-        }
-
         // Date selector
         document.getElementById('reviewDate').addEventListener('change', function() {
             const customDate = document.getElementById('reviewDateCustom');
             customDate.style.display = this.value === 'other' ? 'block' : 'none';
         });
 
-        // Keyboard shortcuts
+        // Escape key to close modals
         document.addEventListener('keydown', function(e) {
-            // Ignore if in input field (unless Escape)
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') {
-                if (e.key === 'Escape') {
-                    e.target.blur();
-                    closeJumpModal();
-                    closeShortcuts();
-                    closeZoom();
-                    closePeek();
-                    closeAlreadyOnMOModal();
-                }
-                return;
-            }
+            if (e.key === 'Escape') {
+                // Close any open modals
+                closeJumpModal();
+                closeZoom();
+                closePeek();
+                closeAlreadyOnMOModal();
+                closeSettings();
+                closeClaimConflict();
 
-            switch(e.key) {
-                case 'a':
-                case 'Enter':
-                    e.preventDefault();
-                    submitReview('approved');
-                    break;
-                case 'd':
-                    e.preventDefault();
-                    submitReview('discarded');
-                    break;
-                case 'm':
-                    e.preventDefault();
-                    openAlreadyOnMOModal();
-                    break;
-                case 's':
-                case 'ArrowRight':
-                case 'n':
-                    e.preventDefault();
-                    nextImage();
-                    break;
-                case 'ArrowLeft':
-                case 'p':
-                    e.preventDefault();
-                    prevImage();
-                    break;
-                case 'j':
-                    e.preventDefault();
-                    jumpToImage();
-                    break;
-                case 'f':
-                    e.preventDefault();
-                    document.getElementById('reviewFieldCode').focus();
-                    break;
-                case 'z':
-                    e.preventDefault();
-                    zoomImage();
-                    break;
-                case '1':
-                case '2':
-                case '3':
-                case '4':
-                case '5':
-                    e.preventDefault();
-                    const dateIdx = parseInt(e.key) - 1;
-                    if (nemfDates[dateIdx]) {
-                        document.getElementById('reviewDate').value = nemfDates[dateIdx];
-                    }
-                    break;
-                case '?':
-                    e.preventDefault();
-                    showShortcuts();
-                    break;
-                case 'Escape':
-                    closeJumpModal();
-                    closeShortcuts();
-                    closeZoom();
-                    closePeek();
-                    break;
+                // If in input field, blur it
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') {
+                    e.target.blur();
+                }
             }
         });
 
