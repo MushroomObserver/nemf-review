@@ -162,6 +162,35 @@
             margin-bottom: 4px;
             text-transform: uppercase;
         }
+        .field-with-lock {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .field-with-lock > input[type="text"],
+        .field-with-lock > select {
+            flex: 1;
+            width: 0;
+            min-width: 0;
+        }
+        .field-with-lock > .autocomplete-wrapper {
+            flex: 1;
+            min-width: 0;
+        }
+        .field-lock {
+            width: 16px;
+            height: 16px;
+            min-width: 16px;
+            max-width: 16px;
+            cursor: pointer;
+            margin: 0;
+            padding: 0;
+            flex: 0 0 16px;
+            accent-color: #4ecca3;
+        }
+        .field-lock:checked {
+            accent-color: #feca57;
+        }
         .field .value {
             font-size: 14px;
             color: #fff;
@@ -415,6 +444,12 @@
         .autocomplete-wrapper {
             position: relative;
         }
+        .field > .autocomplete-wrapper {
+            width: 100%;
+        }
+        .autocomplete-wrapper input {
+            width: 100%;
+        }
         .autocomplete-dropdown {
             display: none;
             position: absolute;
@@ -610,29 +645,38 @@
                 <h3>Review / Corrections <span id="statusBadge"></span></h3>
                 <div class="field">
                     <label>Field Slip Code <a id="reviewFieldSlipLink" href="#" target="_blank" style="color: #74b9ff; font-size: 11px; display: none;">View on MO</a></label>
-                    <input type="text" id="reviewFieldCode" placeholder="NEMF-XXXXX" oninput="updateReviewFieldSlipLink()">
+                    <div class="field-with-lock">
+                        <input type="checkbox" class="field-lock" id="lockFieldCode" title="Lock field to prevent override from linked images">
+                        <input type="text" id="reviewFieldCode" placeholder="NEMF-XXXXX" oninput="updateReviewFieldSlipLink(); onFieldInput('reviewFieldCode', 'lockFieldCode')">
+                    </div>
                 </div>
                 <div class="field">
                     <label>Date</label>
-                    <select id="reviewDate">
-                        <option value="">-- Select date --</option>
-                        <option value="2025-09-17">2025-09-17 (Wed)</option>
-                        <option value="2025-09-18">2025-09-18 (Thu)</option>
-                        <option value="2025-09-19">2025-09-19 (Fri)</option>
-                        <option value="2025-09-20">2025-09-20 (Sat)</option>
-                        <option value="2025-09-21">2025-09-21 (Sun)</option>
-                        <option value="other">Other...</option>
-                    </select>
-                    <input type="date" id="reviewDateCustom" style="display: none; margin-top: 5px;">
+                    <div class="field-with-lock">
+                        <input type="checkbox" class="field-lock" id="lockDate" title="Lock field to prevent override from linked images">
+                        <select id="reviewDate" onchange="onFieldInput('reviewDate', 'lockDate')">
+                            <option value="">-- Select date --</option>
+                            <option value="2025-09-17">2025-09-17 (Wed)</option>
+                            <option value="2025-09-18">2025-09-18 (Thu)</option>
+                            <option value="2025-09-19">2025-09-19 (Fri)</option>
+                            <option value="2025-09-20">2025-09-20 (Sat)</option>
+                            <option value="2025-09-21">2025-09-21 (Sun)</option>
+                            <option value="other">Other...</option>
+                        </select>
+                    </div>
+                    <input type="date" id="reviewDateCustom" style="display: none; margin-top: 5px;" oninput="onFieldInput('reviewDateCustom', 'lockDate')">
                 </div>
                 <div class="field">
                     <label>
                         Location
                         <span class="field-status" id="locationStatus"></span>
                     </label>
-                    <div class="autocomplete-wrapper">
-                        <input type="text" id="reviewLocation" placeholder="Start typing..." autocomplete="off">
-                        <div class="autocomplete-dropdown" id="locationDropdown"></div>
+                    <div class="field-with-lock">
+                        <input type="checkbox" class="field-lock" id="lockLocation" title="Lock field to prevent override from linked images">
+                        <div class="autocomplete-wrapper">
+                            <input type="text" id="reviewLocation" placeholder="Start typing..." autocomplete="off" oninput="onFieldInput('reviewLocation', 'lockLocation')">
+                            <div class="autocomplete-dropdown" id="locationDropdown"></div>
+                        </div>
                     </div>
                     <input type="hidden" id="reviewLocationId">
                 </div>
@@ -641,15 +685,21 @@
                         ID (Name)
                         <span class="field-status" id="nameStatus"></span>
                     </label>
-                    <div class="autocomplete-wrapper">
-                        <input type="text" id="reviewName" placeholder="Start typing..." autocomplete="off">
-                        <div class="autocomplete-dropdown" id="nameDropdown"></div>
+                    <div class="field-with-lock">
+                        <input type="checkbox" class="field-lock" id="lockName" title="Lock field to prevent override from linked images">
+                        <div class="autocomplete-wrapper">
+                            <input type="text" id="reviewName" placeholder="Start typing..." autocomplete="off" oninput="onFieldInput('reviewName', 'lockName')">
+                            <div class="autocomplete-dropdown" id="nameDropdown"></div>
+                        </div>
                     </div>
                     <input type="hidden" id="reviewNameId">
                 </div>
                 <div class="field">
                     <label>Notes</label>
-                    <input type="text" id="reviewNotes" placeholder="Additional notes...">
+                    <div class="field-with-lock">
+                        <input type="checkbox" class="field-lock" id="lockNotes" title="Lock field to prevent override from linked images">
+                        <input type="text" id="reviewNotes" placeholder="Additional notes..." oninput="onFieldInput('reviewNotes', 'lockNotes')">
+                    </div>
                 </div>
                 <div class="field" id="linkedImagesField" style="display: none;">
                     <label>Linked Images</label>
@@ -952,11 +1002,15 @@
                 document.getElementById('reviewLocationId').value = id;
                 document.getElementById('locationDropdown').classList.remove('active');
                 updateFieldStatus('locationStatus', 'verified', '✓ Verified');
+                // Trigger auto-lock when selecting from autocomplete
+                onFieldInput('reviewLocation', 'lockLocation');
             } else {
                 document.getElementById('reviewName').value = name;
                 document.getElementById('reviewNameId').value = id;
                 document.getElementById('nameDropdown').classList.remove('active');
                 updateFieldStatus('nameStatus', 'verified', '✓ Verified');
+                // Trigger auto-lock when selecting from autocomplete
+                onFieldInput('reviewName', 'lockName');
             }
         }
 
@@ -1203,6 +1257,15 @@
             document.getElementById('reviewNameId').value = rev.name_id || src.name_id || '';
             document.getElementById('reviewNotes').value = rev.notes || '';
 
+            // Initialize lock checkboxes based on saved state or field content
+            // Locks should be checked if field has manually-entered content
+            const fieldLocks = rev.field_locks || {};
+            document.getElementById('lockFieldCode').checked = fieldLocks.field_code || false;
+            document.getElementById('lockDate').checked = fieldLocks.date || false;
+            document.getElementById('lockLocation').checked = fieldLocks.location || false;
+            document.getElementById('lockName').checked = fieldLocks.name || false;
+            document.getElementById('lockNotes').checked = fieldLocks.notes || false;
+
             // Update field verification status based on whether we have IDs
             const locationId = rev.location_id || src.location_id;
             const nameId = rev.name_id || src.name_id;
@@ -1364,6 +1427,27 @@
             }
         }
 
+        function onFieldInput(fieldId, lockId) {
+            // Auto-check lock when user types into field (if it has content)
+            // Auto-uncheck lock when field becomes empty
+            const field = document.getElementById(fieldId);
+            const lock = document.getElementById(lockId);
+
+            if (!field || !lock) return;
+
+            // Check if field has content
+            const hasContent = field.value && field.value.trim() !== '';
+
+            // Auto-check lock if field has content and lock is unchecked
+            if (hasContent && !lock.checked) {
+                lock.checked = true;
+            }
+            // Auto-uncheck lock if field is empty
+            else if (!hasContent && lock.checked) {
+                lock.checked = false;
+            }
+        }
+
         function linkFromPeek() {
             if (!peekingImage) return;
             linkFromImage(peekingImage.filename);
@@ -1378,17 +1462,18 @@
             const rev = data.review;
 
             // Copy field data to current review fields (prefer review data if set)
-            if (src.field_code || rev.field_code) {
+            // Only copy if field is not locked
+            if ((src.field_code || rev.field_code) && !document.getElementById('lockFieldCode').checked) {
                 document.getElementById('reviewFieldCode').value = rev.field_code || src.field_code;
             }
-            if (src.date || rev.date) {
+            if ((src.date || rev.date) && !document.getElementById('lockDate').checked) {
                 document.getElementById('reviewDate').value = rev.date || src.date;
             }
-            if (src.location || rev.location) {
+            if ((src.location || rev.location) && !document.getElementById('lockLocation').checked) {
                 document.getElementById('reviewLocation').value = rev.location || src.location;
                 document.getElementById('reviewLocationId').value = rev.location_id || src.location_id || '';
             }
-            if (src.name || rev.name) {
+            if ((src.name || rev.name) && !document.getElementById('lockName').checked) {
                 document.getElementById('reviewName').value = rev.name || src.name;
                 document.getElementById('reviewNameId').value = rev.name_id || src.name_id || '';
             }
@@ -1469,7 +1554,14 @@
                 name: name,
                 name_id: document.getElementById('reviewNameId').value || null,
                 notes: document.getElementById('reviewNotes').value,
-                linked_images: currentImage.review.linked_images || []
+                linked_images: currentImage.review.linked_images || [],
+                field_locks: {
+                    field_code: document.getElementById('lockFieldCode').checked,
+                    date: document.getElementById('lockDate').checked,
+                    location: document.getElementById('lockLocation').checked,
+                    name: document.getElementById('lockName').checked,
+                    notes: document.getElementById('lockNotes').checked
+                }
             };
 
             try {
@@ -2010,7 +2102,14 @@
                 linked_images: currentImage.review.linked_images || [],
                 mo_observation_id: observationId,
                 mo_image_id: imageId,
-                mo_observation_url: observationUrl
+                mo_observation_url: observationUrl,
+                field_locks: {
+                    field_code: document.getElementById('lockFieldCode').checked,
+                    date: document.getElementById('lockDate').checked,
+                    location: document.getElementById('lockLocation').checked,
+                    name: document.getElementById('lockName').checked,
+                    notes: document.getElementById('lockNotes').checked
+                }
             };
 
             const response = await fetch(
@@ -2133,18 +2232,20 @@
             const src = data.source;
             const rev = data.review;
 
-            if (src.field_code || rev.field_code) {
+            // Copy field data to current review fields (prefer review data if set)
+            // Only copy if field is not locked
+            if ((src.field_code || rev.field_code) && !document.getElementById('lockFieldCode').checked) {
                 document.getElementById('reviewFieldCode').value = rev.field_code || src.field_code;
                 updateReviewFieldSlipLink();
             }
-            if (src.date || rev.date) {
+            if ((src.date || rev.date) && !document.getElementById('lockDate').checked) {
                 document.getElementById('reviewDate').value = rev.date || src.date;
             }
-            if (src.location || rev.location) {
+            if ((src.location || rev.location) && !document.getElementById('lockLocation').checked) {
                 document.getElementById('reviewLocation').value = rev.location || src.location;
                 document.getElementById('reviewLocationId').value = rev.location_id || src.location_id || '';
             }
-            if (src.name || rev.name) {
+            if ((src.name || rev.name) && !document.getElementById('lockName').checked) {
                 document.getElementById('reviewName').value = rev.name || src.name;
                 document.getElementById('reviewNameId').value = rev.name_id || src.name_id || '';
             }

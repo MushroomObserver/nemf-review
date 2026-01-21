@@ -465,6 +465,7 @@ def api_review_image(filename):
     review['mo_observation_id'] = data.get('mo_observation_id', review.get('mo_observation_id'))
     review['mo_image_id'] = data.get('mo_image_id', review.get('mo_image_id'))
     review['mo_observation_url'] = data.get('mo_observation_url', review.get('mo_observation_url'))
+    review['field_locks'] = data.get('field_locks', review.get('field_locks', {}))
     review['reviewed_at'] = datetime.now().isoformat()
     review['reviewer'] = username  # Track who reviewed
 

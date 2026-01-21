@@ -1,0 +1,19 @@
+Phase 5: Main image: IMG_5744.jpeg
+Phase 5: Linked images: ['IMG_5743.jpeg', 'IMG_5742.jpeg', 'IMG_5741.jpeg']
+Phase 5: All images to upload: ['IMG_5744.jpeg', 'IMG_5743.jpeg', 'IMG_5742.jpeg', 'IMG_5741.jpeg']
+Phase 5: Processing main image: IMG_5744.jpeg
+Phase 5: Uploaded main IMG_5744.jpeg -> Image ID: 1933638
+Phase 5: Created observation ID: 625784
+Phase 5: Starting to upload 3 linked images
+Phase 5: Processing linked image: IMG_5743.jpeg
+Phase 5: Uploading IMG_5743.jpeg from path: /Users/nathan/src/mushroom-observer/projects/nemf-photos/scaled-25pct/IMG_5743.jpeg
+Phase 5: Uploaded IMG_5743.jpeg -> Image ID: 1933639
+Phase 5: Added image 1933639 to observation 625784
+Phase 5: Processing linked image: IMG_5742.jpeg
+Phase 5: Uploading IMG_5742.jpeg from path: /Users/nathan/src/mushroom-observer/projects/nemf-photos/scaled-25pct/IMG_5742.jpeg
+Phase 5: Uploaded IMG_5742.jpeg -> Image ID: 1933640
+Phase 5: Added image 1933640 to observation 625784
+Phase 5: Processing linked image: IMG_5741.jpeg
+Phase 5: Uploading IMG_5741.jpeg from path: /Users/nathan/src/mushroom-observer/projects/nemf-photos/scaled-25pct/IMG_5741.jpeg
+Phase 5: Uploaded IMG_5741.jpeg -> Image ID: 1933641
+Phase 5: Added image 1933641 to observation 625784
