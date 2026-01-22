@@ -78,6 +78,7 @@ See `scripts/deploy.sh` for Ubuntu server deployment.
 | `/api/image/<filename>/heartbeat` | POST | Refresh claim |
 | `/api/image/<filename>/release` | POST | Release claim |
 | `/api/link/<filename>` | POST | Link two images |
+| `/api/unlink/<filename>` | POST | Unlink two images |
 | `/api/lookup/location` | GET | Location autocomplete |
 | `/api/lookup/name` | GET | Name autocomplete |
 | `/api/settings` | GET/POST | User settings |

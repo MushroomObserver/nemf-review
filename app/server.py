@@ -17,7 +17,7 @@ from threading import Lock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import requests
-from flask import Flask, render_template, jsonify, request, send_from_directory, Response
+from flask import Flask, render_template, jsonify, request, send_from_directory, Response, session
 
 app = Flask(__name__, template_folder='../templates', static_folder='../static')
 
@@ -32,6 +32,10 @@ mo_base_url = 'https://mushroomobserver.org'  # MO API base URL (configurable)
 # Locking state
 claims = {}  # {filename: {"user": username, "claimed_at": datetime, "heartbeat": datetime}}
 claims_lock = Lock()
+
+# View history per user (most recent first)
+view_history = {}  # {username: [filename1, filename2, ...]}
+view_history_lock = Lock()
 CLAIM_TIMEOUT_MINUTES = 10
 CLAIM_OVERRIDE_MINUTES = 30
 
@@ -235,6 +239,92 @@ def try_claim_multiple(filenames, username):
         return (True, [])
 
 
+def add_to_view_history(filename, username):
+    """Add image to user's view history (most recent first)."""
+    with view_history_lock:
+        if username not in view_history:
+            view_history[username] = []
+
+        history = view_history[username]
+
+        # Remove if already in history
+        if filename in history:
+            history.remove(filename)
+
+        # Add to front
+        history.insert(0, filename)
+
+        # Keep history reasonable size (last 100 views)
+        if len(history) > 100:
+            view_history[username] = history[:100]
+
+
+def get_view_history(username):
+    """Get user's view history (most recent first)."""
+    with view_history_lock:
+        return view_history.get(username, []).copy()
+
+
+def is_resolved(status):
+    """Check if an image status is considered resolved."""
+    return status in ('already_on_mo', 'excluded') or status is not None
+
+
+def is_all_resolved():
+    """Check if all images are resolved."""
+    for img in review_data['images'].values():
+        status = img['review'].get('status')
+        mo_obs_id = img['review'].get('mo_observation_id')
+        # Resolved if: has status (already_on_mo/excluded) or uploaded to MO
+        if not status and not mo_obs_id:
+            return False
+    return True
+
+
+def get_next_unreviewed_for_user(username, current_filename=None):
+    """
+    Get next unreviewed image for user in priority order.
+    Skips images locked by other users.
+    Prioritizes user's own soft-locked images first.
+    If current_filename is provided, starts searching after that image.
+    """
+    sorted_images = get_sorted_images()
+
+    # If current_filename provided, start searching after it
+    start_index = 0
+    if current_filename and current_filename in sorted_images:
+        start_index = sorted_images.index(current_filename) + 1
+
+    # Create search list (from start_index onwards, then wrap around)
+    search_list = sorted_images[start_index:] + sorted_images[:start_index]
+
+    # First check for user's own soft-locked unresolved images
+    for filename in search_list:
+        img = review_data['images'][filename]
+        status = img['review'].get('status')
+        mo_obs_id = img['review'].get('mo_observation_id')
+        resolved = status in ('already_on_mo', 'excluded') or mo_obs_id
+
+        if not resolved:
+            claim = get_claim(filename)
+            if claim and claim['user'] == username:
+                return filename
+
+    # Then look for unreviewed/unresolved images not locked by others
+    for filename in search_list:
+        img = review_data['images'][filename]
+        status = img['review'].get('status')
+        mo_obs_id = img['review'].get('mo_observation_id')
+        resolved = status in ('already_on_mo', 'excluded') or mo_obs_id
+
+        if not resolved:
+            claim = get_claim(filename)
+            if not claim or claim['user'] == username:
+                return filename
+
+    return None
+
+
 # Data loading functions
 def load_data(path):
     """Load review data from JSON file."""
@@ -275,7 +365,7 @@ def save_data():
         summary['reviewed'] = 0
         summary['approved'] = 0
         summary['corrected'] = 0
-        summary['discarded'] = 0
+        summary['excluded'] = 0
         summary['already_on_mo'] = 0
 
         for img in review_data['images'].values():
@@ -286,8 +376,8 @@ def save_data():
                     summary['approved'] += 1
                 elif status == 'corrected':
                     summary['corrected'] += 1
-                elif status == 'discarded':
-                    summary['discarded'] += 1
+                elif status == 'excluded':
+                    summary['excluded'] += 1
                 elif status == 'already_on_mo':
                     summary['already_on_mo'] += 1
 
@@ -389,6 +479,11 @@ def api_image(filename):
     # Try to claim the image
     success, message, claimed_by = try_claim(filename, username)
 
+    # Track view history only if requested (to avoid adding Back/Forward nav to history)
+    add_to_history = request.args.get('add_to_history', 'false').lower() == 'true'
+    if add_to_history:
+        add_to_view_history(filename, username)
+
     img = review_data['images'][filename]
     nav = get_navigation_context(filename)
 
@@ -404,6 +499,61 @@ def api_image(filename):
             'claimed_by': claimed_by,
             'is_mine': claimed_by == username
         }
+    })
+
+
+@app.route('/api/navigation/<path:filename>')
+@requires_auth
+def api_navigation(filename):
+    """Get navigation info for current image based on user's view history."""
+    username = get_current_user()
+    history = get_view_history(username)
+
+    # Find current position in history
+    current_index = history.index(filename) if filename in history else -1
+
+    # Determine navigation options
+    can_go_back = current_index >= 0 and current_index < len(history) - 1
+    can_go_forward_in_history = current_index > 0
+
+    # Get back/forward targets
+    back_target = history[current_index + 1] if can_go_back else None
+    forward_target_history = history[current_index - 1] if can_go_forward_in_history else None
+
+    # Check if there's an unreviewed image ahead in history
+    next_unreviewed_in_history = None
+    if current_index >= 0:
+        for i in range(current_index - 1, -1, -1):
+            hist_filename = history[i]
+            img = review_data['images'].get(hist_filename)
+            if img:
+                status = img['review'].get('status')
+                mo_obs_id = img['review'].get('mo_observation_id')
+                resolved = status in ('already_on_mo', 'excluded') or mo_obs_id
+                if not resolved:
+                    next_unreviewed_in_history = hist_filename
+                    break
+
+    # Get next unreviewed image after current (priority order, skip others' locks)
+    next_unreviewed_priority = get_next_unreviewed_for_user(username, current_filename=filename)
+
+    # Determine next unreviewed target (prefer history, then priority)
+    next_unreviewed = next_unreviewed_in_history or next_unreviewed_priority
+    next_unreviewed_mode = 'history' if next_unreviewed_in_history else 'priority'
+
+    # Check if all resolved
+    all_resolved = is_all_resolved()
+
+    return jsonify({
+        'current_index': current_index,
+        'history_length': len(history),
+        'can_go_back': can_go_back,
+        'can_go_forward': can_go_forward_in_history,
+        'back_target': back_target,
+        'forward_target': forward_target_history,
+        'next_unreviewed': next_unreviewed,
+        'next_unreviewed_mode': next_unreviewed_mode,
+        'all_resolved': all_resolved
     })
 
 
@@ -462,6 +612,10 @@ def api_review_image(filename):
     review['linked_images'] = data.get('linked_images', review.get('linked_images', []))
     review['mo_id_type'] = data.get('mo_id_type', review.get('mo_id_type'))
     review['mo_id_value'] = data.get('mo_id_value', review.get('mo_id_value'))
+    review['mo_observation_id'] = data.get('mo_observation_id', review.get('mo_observation_id'))
+    review['mo_image_id'] = data.get('mo_image_id', review.get('mo_image_id'))
+    review['mo_observation_url'] = data.get('mo_observation_url', review.get('mo_observation_url'))
+    review['field_locks'] = data.get('field_locks', review.get('field_locks', {}))
     review['reviewed_at'] = datetime.now().isoformat()
     review['reviewer'] = username  # Track who reviewed
 
@@ -553,21 +707,89 @@ def api_link_image(filename):
             'failed_claims': failed_info
         }), 409
 
+    # Add bidirectional link
+    source_img = review_data['images'][filename]
+    source_review = source_img['review']
+    source_linked = source_review.get('linked_images', [])
+    if target_filename not in source_linked:
+        source_linked.append(target_filename)
+        source_review['linked_images'] = source_linked
+
+    target_img = review_data['images'][target_filename]
+    target_review = target_img['review']
+    target_linked = target_review.get('linked_images', [])
+    if filename not in target_linked:
+        target_linked.append(filename)
+        target_review['linked_images'] = target_linked
+
+    save_data()
+
     return jsonify({
         'success': True,
-        'message': f'Claimed both {filename} and {target_filename}'
+        'message': f'Claimed both {filename} and {target_filename}',
+        'linked_images': source_linked
+    })
+
+
+@app.route('/api/unlink/<path:filename>', methods=['POST'])
+@requires_auth
+def api_unlink_image(filename):
+    """Unlink an image from the current image."""
+    username = get_current_user()
+    data = request.json
+    target_filename = data.get('target')
+
+    if not target_filename:
+        return jsonify({'error': 'Target filename required'}), 400
+
+    if filename not in review_data['images']:
+        return jsonify({'error': 'Source image not found'}), 404
+
+    if target_filename not in review_data['images']:
+        return jsonify({'error': 'Target image not found'}), 404
+
+    # Verify user has claim on current image
+    claim = get_claim(filename)
+    if not claim or claim['user'] != username:
+        return jsonify({
+            'error': 'You must have claimed this image to unlink'
+        }), 403
+
+    # Remove bidirectional link
+    source_img = review_data['images'][filename]
+    source_review = source_img['review']
+    source_linked = source_review.get('linked_images', [])
+    if target_filename in source_linked:
+        source_linked.remove(target_filename)
+        source_review['linked_images'] = source_linked
+
+    target_img = review_data['images'][target_filename]
+    target_review = target_img['review']
+    target_linked = target_review.get('linked_images', [])
+    if filename in target_linked:
+        target_linked.remove(filename)
+        target_review['linked_images'] = target_linked
+
+    save_data()
+
+    return jsonify({
+        'success': True,
+        'message': f'Unlinked {filename} from {target_filename}',
+        'linked_images': source_linked
     })
 
 
 @app.route('/api/next-unreviewed')
 @requires_auth
 def api_next_unreviewed():
-    """Get the next unreviewed image by priority."""
-    sorted_images = get_sorted_images()
-    for filename in sorted_images:
-        if not review_data['images'][filename]['review'].get('status'):
-            return jsonify({'filename': filename})
-    return jsonify({'filename': None, 'message': 'All images reviewed!'})
+    """Get the next unreviewed image for this user (skips others' locks)."""
+    username = get_current_user()
+    filename = get_next_unreviewed_for_user(username)
+
+    if filename:
+        return jsonify({'filename': filename})
+    else:
+        return jsonify({'filename': None, 'message': 'All images reviewed!'})
 
 
 @app.route('/api/lookup/location')
@@ -684,38 +906,81 @@ def api_lookup_existing_observations():
 @app.route('/api/verify_mo_id')
 @requires_auth
 def api_verify_mo_id():
-    """Verify that an MO observation or image ID exists."""
+    """Verify that an MO observation or field slip exists."""
     id_type = request.args.get('type', '')
     id_value = request.args.get('id', '')
+
+    print(f"DEBUG: Verifying {id_type} = {id_value}")
 
     if not id_type or not id_value:
         return jsonify({'error': 'Missing type or id'}), 400
 
-    if id_type not in ('observation', 'image'):
+    if id_type not in ('observation', 'field_slip'):
         return jsonify({'error': 'Invalid type'}), 400
 
     try:
-        # Call MO API to verify the ID exists
+        from mo_api_client import MOAPIClient, MOAPIError
+
         if id_type == 'observation':
+            # Call MO API to verify the observation exists
             url = f'{mo_base_url}/api2/observations/{id_value}'
-        else:
-            url = f'{mo_base_url}/api2/images/{id_value}'
+            response = requests.get(
+                url,
+                timeout=10,
+                headers={'Accept': 'application/json'}
+            )
 
-        response = requests.get(url, timeout=10, headers={'Accept': 'application/json'})
+            if response.status_code == 200:
+                return jsonify({'exists': True, 'id': id_value, 'type': id_type})
+            elif response.status_code == 404:
+                return jsonify({'exists': False, 'id': id_value, 'type': id_type})
+            else:
+                return jsonify({
+                    'error': f'MO API returned status {response.status_code}'
+                }), 500
 
-        if response.status_code == 200:
-            return jsonify({'exists': True, 'id': id_value, 'type': id_type})
-        elif response.status_code == 404:
-            return jsonify({'exists': False, 'id': id_value, 'type': id_type})
-        else:
-            return jsonify({
-                'error': f'MO API returned status {response.status_code}'
-            }), 500
+        elif id_type == 'field_slip':
+            # Use MOApiClient to check if field slip exists
+            username = get_current_user()
+            user_config = users.get(username)
+            if not user_config:
+                return jsonify({'error': 'User not found'}), 401
+
+            try:
+                print(f"DEBUG: Creating MOAPIClient for field_slip check")
+                client = MOAPIClient(
+                    base_url=mo_base_url,
+                    api_key=user_config.get('api_key')
+                )
+
+                print(f"DEBUG: Calling get_field_slip_by_code({id_value})")
+                field_slip = client.get_field_slip_by_code(id_value)
+                print(f"DEBUG: Field slip result: {field_slip}")
+
+                if field_slip:
+                    print(f"DEBUG: Field slip exists, returning True")
+                    return jsonify({'exists': True, 'id': id_value, 'type': id_type})
+                else:
+                    print(f"DEBUG: Field slip not found, returning False")
+                    return jsonify({'exists': False, 'id': id_value, 'type': id_type})
+            except MOAPIError as e:
+                print(f"ERROR: Field slip verification error: {e}")
+                return jsonify({'error': f'Field slip API error: {str(e)}'}), 500
 
     except requests.Timeout:
+        print(f"ERROR: Request timeout")
         return jsonify({'error': 'Request to MO API timed out'}), 504
     except requests.RequestException as e:
+        print(f"ERROR: Request exception: {e}")
         return jsonify({'error': f'Failed to verify: {str(e)}'}), 500
+    except MOAPIError as e:
+        print(f"ERROR: MOAPIError: {e}")
+        return jsonify({'error': f'MO API error: {str(e)}'}), 500
+    except Exception as e:
+        print(f"ERROR: Unexpected exception: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Verification failed: {str(e)}'}), 500
 
 
 @app.route('/api/adjacent/<path:filename>')
@@ -810,6 +1075,13 @@ def api_mo_add_to_existing():
 
     username = get_current_user()
     user_data = users.get(username, {})
+
+    # Ensure user_data is a dictionary
+    if not isinstance(user_data, dict):
+        return jsonify({
+            'error': 'Invalid user configuration. Please check users.json format.'
+        }), 500
+
     api_key = user_data.get('api_key')
 
     if not api_key:
@@ -844,6 +1116,17 @@ def api_mo_add_to_existing():
             'error': f'Image is claimed by {claim["user"]}'
         }), 409
 
+    # Get linked images
+    img = review_data['images'][filename]
+    linked_images = img['review'].get('linked_images', [])
+    all_images = [filename] + linked_images
+
+    import sys
+    sys.stderr.write(f"Phase 4: Main image: {filename}\n")
+    sys.stderr.write(f"Phase 4: Linked images: {linked_images}\n")
+    sys.stderr.write(f"Phase 4: All images to upload: {all_images}\n")
+    sys.stderr.flush()
+
     try:
         client = MOAPIClient(api_key, base_url=mo_base_url)
 
@@ -853,28 +1136,55 @@ def api_mo_add_to_existing():
                 'error': f'Observation {observation_id} not found on MO'
             }), 404
 
-        # Step 2: Upload image
-        img_path = images_dir / filename
-        copyright_holder = username  # Use reviewer's username
-        upload_result = client.upload_image(
-            str(img_path),
-            copyright_holder=copyright_holder,
-            notes=f"Field slip: {field_code}" if field_code else "",
-            original_name=filename
-        )
+        uploaded_images = []
 
-        # Extract image ID from response
-        image_id = extract_image_id(upload_result)
+        # Step 2: Upload all images (main + linked)
+        for img_filename in all_images:
+            sys.stderr.write(f"Phase 4: Processing image: {img_filename}\n")
+            sys.stderr.flush()
+            if img_filename not in review_data['images']:
+                continue
 
-        # Step 3: Add image to observation
-        client.add_image_to_observation(observation_id, image_id)
+            img_path = images_dir / img_filename
+            sys.stderr.write(f"Phase 4: Uploading {img_filename} from path: {img_path}\n")
+            sys.stderr.flush()
 
-        # Step 4: Update observation notes with field slip code
+            copyright_holder = username
+            upload_result = client.upload_image(
+                str(img_path),
+                copyright_holder=copyright_holder,
+                notes=f"Field slip: {field_code}" if field_code else "",
+                original_name=img_filename
+            )
+
+            # Extract image ID from response
+            img_id = extract_image_id(upload_result)
+            sys.stderr.write(f"Phase 4: Uploaded {img_filename} -> Image ID: {img_id}\n")
+            sys.stderr.flush()
+
+            # Add image to observation
+            client.add_image_to_observation(observation_id, img_id)
+            sys.stderr.write(f"Phase 4: Added image {img_id} to observation {observation_id}\n")
+            sys.stderr.flush()
+
+            uploaded_images.append({
+                'filename': img_filename,
+                'image_id': img_id
+            })
+
+            # Update review data for this image
+            img_data = review_data['images'][img_filename]
+            img_data['review']['mo_image_id'] = img_id
+            img_data['review']['mo_observation_id'] = observation_id
+            img_data['review']['uploaded_at'] = datetime.now().isoformat()
+            img_data['review']['uploaded_by'] = username
+
+        # Step 3: Update observation notes with field slip code
         if field_code:
             notes_update = f"Field slip: {field_code}"
             client.update_observation_notes(observation_id, notes_update)
 
-        # Step 5: Create or link field slip
+        # Step 4: Create or link field slip
         field_slip_result = None
         if field_code:
             try:
@@ -884,22 +1194,11 @@ def api_mo_add_to_existing():
                     project_id
                 )
             except MOAPIConflictError as e:
-                # Log conflict but don't fail the operation
-                # Image is already uploaded and linked
                 print(f"Field slip conflict: {e}")
                 field_slip_result = {'warning': str(e)}
             except MOAPIError as e:
-                # Field slip API might not be implemented yet
-                # Log but don't fail - image is already uploaded
                 print(f"Field slip API error (may not be implemented): {e}")
                 field_slip_result = {'warning': f'Field slip API unavailable: {e}'}
-
-        # Update review data
-        img = review_data['images'][filename]
-        img['review']['mo_image_id'] = image_id
-        img['review']['mo_observation_id'] = observation_id
-        img['review']['uploaded_at'] = datetime.now().isoformat()
-        img['review']['uploaded_by'] = username
 
         # Release claim
         release_claim(filename, username)
@@ -907,14 +1206,18 @@ def api_mo_add_to_existing():
 
         return jsonify({
             'success': True,
-            'image_id': image_id,
+            'image_id': uploaded_images[0]['image_id'],  # Main image ID
             'observation_id': observation_id,
+            'observation_url': f'{mo_base_url}/{observation_id}',
+            'uploaded_images': uploaded_images,
             'field_slip': field_slip_result if field_code else None
         })
 
     except MOAPIError as e:
         return jsonify({'error': str(e)}), 500
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': f'Unexpected error: {str(e)}'}), 500
 
 
@@ -939,6 +1242,13 @@ def api_mo_create_new():
 
     username = get_current_user()
     user_data = users.get(username, {})
+
+    # Ensure user_data is a dictionary
+    if not isinstance(user_data, dict):
+        return jsonify({
+            'error': 'Invalid user configuration. Please check users.json format.'
+        }), 500
+
     api_key = user_data.get('api_key')
 
     if not api_key:
@@ -968,10 +1278,26 @@ def api_mo_create_new():
             'error': f'Image is claimed by {claim["user"]}'
         }), 409
 
+    # Get linked images
+    img = review_data['images'][filename]
+    linked_images = img['review'].get('linked_images', [])
+    all_images = [filename] + linked_images
+
+    import sys
+    sys.stderr.write(f"Phase 5: Main image: {filename}\n")
+    sys.stderr.write(f"Phase 5: Linked images: {linked_images}\n")
+    sys.stderr.write(f"Phase 5: All images to upload: {all_images}\n")
+    sys.stderr.flush()
+
     try:
         client = MOAPIClient(api_key, base_url=mo_base_url)
 
-        # Step 1: Upload image
+        uploaded_images = []
+
+        # Step 1: Upload main image
+        sys.stderr.write(f"Phase 5: Processing main image: {filename}\n")
+        sys.stderr.flush()
+
         img_path = images_dir / filename
         copyright_holder = username
         upload_result = client.upload_image(
@@ -983,8 +1309,15 @@ def api_mo_create_new():
 
         # Extract image ID from response
         image_id = extract_image_id(upload_result)
+        sys.stderr.write(f"Phase 5: Uploaded main {filename} -> Image ID: {image_id}\n")
+        sys.stderr.flush()
 
-        # Step 2: Create observation with field slip in notes
+        uploaded_images.append({
+            'filename': filename,
+            'image_id': image_id
+        })
+
+        # Step 2: Create observation with main image
         obs_notes = notes
         if field_code:
             field_slip_note = f"Field slip: {field_code}"
@@ -1000,8 +1333,52 @@ def api_mo_create_new():
 
         # Extract observation ID from response
         observation_id = extract_observation_id(obs_result)
+        sys.stderr.write(f"Phase 5: Created observation ID: {observation_id}\n")
+        sys.stderr.flush()
 
-        # Step 3: Create field slip
+        # Step 3: Upload and add linked images
+        sys.stderr.write(f"Phase 5: Starting to upload {len(linked_images)} linked images\n")
+        sys.stderr.flush()
+
+        for linked_filename in linked_images:
+            sys.stderr.write(f"Phase 5: Processing linked image: {linked_filename}\n")
+            sys.stderr.flush()
+            if linked_filename not in review_data['images']:
+                continue
+
+            linked_path = images_dir / linked_filename
+            sys.stderr.write(f"Phase 5: Uploading {linked_filename} from path: {linked_path}\n")
+            sys.stderr.flush()
+
+            linked_upload_result = client.upload_image(
+                str(linked_path),
+                copyright_holder=copyright_holder,
+                notes=f"Field slip: {field_code}" if field_code else "",
+                original_name=linked_filename
+            )
+
+            linked_img_id = extract_image_id(linked_upload_result)
+            sys.stderr.write(f"Phase 5: Uploaded {linked_filename} -> Image ID: {linked_img_id}\n")
+            sys.stderr.flush()
+
+            # Add linked image to observation
+            client.add_image_to_observation(observation_id, linked_img_id)
+            sys.stderr.write(f"Phase 5: Added image {linked_img_id} to observation {observation_id}\n")
+            sys.stderr.flush()
+
+            uploaded_images.append({
+                'filename': linked_filename,
+                'image_id': linked_img_id
+            })
+
+            # Update review data for linked image
+            linked_img_data = review_data['images'][linked_filename]
+            linked_img_data['review']['mo_image_id'] = linked_img_id
+            linked_img_data['review']['mo_observation_id'] = observation_id
+            linked_img_data['review']['uploaded_at'] = datetime.now().isoformat()
+            linked_img_data['review']['uploaded_by'] = username
+
+        # Step 4: Create field slip
         field_slip_result = None
         if field_code:
             try:
@@ -1022,7 +1399,7 @@ def api_mo_create_new():
                 print(f"Field slip API error (may not be implemented): {e}")
                 field_slip_result = {'warning': f'Field slip API unavailable: {e}'}
 
-        # Update review data
+        # Update review data for main image
         img = review_data['images'][filename]
         img['review']['mo_image_id'] = image_id
         img['review']['mo_observation_id'] = observation_id
@@ -1037,12 +1414,16 @@ def api_mo_create_new():
             'success': True,
             'image_id': image_id,
             'observation_id': observation_id,
+            'observation_url': f'{mo_base_url}/{observation_id}',
+            'uploaded_images': uploaded_images,
             'field_slip': field_slip_result if field_code else None
         })
 
     except MOAPIError as e:
         return jsonify({'error': str(e)}), 500
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': f'Unexpected error: {str(e)}'}), 500
 
 
