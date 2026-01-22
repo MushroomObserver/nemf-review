@@ -298,7 +298,7 @@
         button:hover { opacity: 0.9; }
         button:active { transform: scale(0.98); }
         .btn-approve { background: #4ecca3; color: #000; }
-        .btn-discard { background: #ff6b6b; color: #fff; }
+        .btn-exclude { background: #ff6b6b; color: #fff; }
         .btn-skip { background: #555; color: #fff; }
         .btn-already-on-mo { background: #74b9ff; color: #000; }
         .btn-mo-phase4 { background: #a29bfe; color: #000; }
@@ -325,7 +325,7 @@
         }
         .status-approved { background: #4ecca3; color: #000; }
         .status-corrected { background: #feca57; color: #000; }
-        .status-discarded { background: #ff6b6b; color: #fff; }
+        .status-excluded { background: #ff6b6b; color: #fff; }
         .status-already_on_mo { background: #74b9ff; color: #000; }
         .uploaded-warning {
             background: #fd79a8;
@@ -568,7 +568,7 @@
                 <span>Reviewed: <span class="count" id="reviewedCount">0</span></span>
                 <span>Approved: <span class="count" id="approvedCount">0</span></span>
                 <span>On MO: <span class="count" id="alreadyOnMOCount">0</span></span>
-                <span>Discarded: <span class="count" id="discardedCount">0</span></span>
+                <span>Excluded: <span class="count" id="excludedCount">0</span></span>
                 <span>Position: <span class="count" id="positionInfo">0/0</span></span>
                 <span style="margin-left: 20px;">User: <span class="count" id="currentUser">-</span></span>
             </div>
@@ -671,16 +671,16 @@
                 <div class="right-column">
                     <!-- Navigation buttons -->
                     <div style="display: flex; gap: 10px;">
-                        <button class="btn-nav" onclick="prevImage()" style="flex: 1;">← Prev</button>
+                        <button class="btn-nav" id="btnBack" onclick="backImage()" style="flex: 1;">← Back</button>
+                        <button class="btn-nav" id="btnForward" onclick="forwardImage()" style="flex: 1;">Forward →</button>
                         <button class="btn-nav" onclick="jumpToImage()" style="flex: 1;">Jump</button>
-                        <button class="btn-nav" onclick="nextImage()" style="flex: 1;">Next →</button>
+                        <button class="btn-nav" id="btnNextUnreviewed" onclick="nextUnreviewedImage()" style="flex: 1;">Next Unreviewed ⏭</button>
                     </div>
 
                     <!-- Action buttons -->
                     <div style="display: flex; gap: 10px;">
-                        <button class="btn-approve" onclick="submitReview('approved')" style="flex: 1;">Approve</button>
                         <button class="btn-already-on-mo" onclick="openAlreadyOnMOModal()" style="flex: 1;">Already on MO</button>
-                        <button class="btn-discard" onclick="submitReview('discarded')" style="flex: 1;">Discard</button>
+                        <button class="btn-exclude" onclick="submitReview('excluded')" style="flex: 1;">Exclude</button>
                     </div>
 
                     <!-- Upload to MO section -->
@@ -771,11 +771,15 @@
     </div>
 
     <!-- Jump to image modal -->
-    <div class="jump-modal" id="jumpModal">
-        <div class="jump-content">
+    <div class="jump-modal" id="jumpModal" onclick="closeJumpModal()">
+        <div class="jump-content" onclick="event.stopPropagation()">
             <h3>Jump to Image</h3>
-            <input type="text" id="jumpInput" placeholder="Enter filename or field code..." onkeyup="handleJumpInput(event)">
-            <div id="jumpResults" style="margin-top: 10px; max-height: 300px; overflow-y: auto;"></div>
+            <input type="text" id="jumpInput" placeholder="Enter exact filename (e.g., IMG_5163.jpeg)" onkeydown="handleJumpInput(event)">
+            <div id="jumpError" style="margin-top: 10px; color: #ff6b6b; display: none;"></div>
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button class="btn-approve" onclick="executeJump()">Jump</button>
+                <button class="btn-exclude" onclick="closeJumpModal()">Cancel</button>
+            </div>
         </div>
     </div>
 
@@ -824,10 +828,12 @@
             <h2>Already on MO</h2>
             <p style="font-size: 13px; color: #888;">
                 This image has already been uploaded to Mushroom Observer.
-                Select or enter an Observation ID (number) or Field Slip Code.
+                Select from dropdown or enter an Observation ID (number) or Field Slip Code.
             </p>
-            <input type="text" class="mo-id-input" id="moIdInput" list="moIdSuggestions" placeholder="Enter Observation ID or Field Slip Code">
-            <datalist id="moIdSuggestions"></datalist>
+            <select class="mo-id-input" id="moIdSelect" style="width: 100%; margin-bottom: 10px;">
+                <option value="">-- Select existing --</option>
+            </select>
+            <input type="text" class="mo-id-input" id="moIdInput" placeholder="Or enter Observation ID or Field Slip Code">
             <div id="moVerificationStatus" class="verification-status" style="display: none;"></div>
             <div style="display: flex; gap: 10px; margin-top: 20px;">
                 <button class="btn-approve" onclick="submitAlreadyOnMO()">Submit</button>
@@ -861,6 +867,8 @@
         let nemfDates = [];
         let peekingImage = null;  // Image currently being peeked at
         let adjacentCache = {};   // Cache adjacent image data
+        let navigationState = null;  // Navigation info from backend
+        let currentExistingObservations = [];  // Existing observations for current field code
         let currentUser = null;
         let heartbeatInterval = null;
 
@@ -1090,10 +1098,12 @@
 
             if (!code) {
                 container.style.display = 'none';
+                currentExistingObservations = [];
                 return;
             }
 
             const results = await fetch(`/api/lookup/existing_observations?code=${encodeURIComponent(code)}`).then(r => r.json());
+            currentExistingObservations = results;
 
             if (results.length > 0) {
                 container.style.display = 'block';
@@ -1186,8 +1196,9 @@
             }
         }
 
-        async function loadImage(filename) {
-            const data = await fetch(`/api/image/${encodeURIComponent(filename)}`).then(r => r.json());
+        async function loadImage(filename, addToHistory = true) {
+            const url = `/api/image/${encodeURIComponent(filename)}${addToHistory ? '?add_to_history=true' : ''}`;
+            const data = await fetch(url).then(r => r.json());
             if (data.error) {
                 alert(data.error);
                 return;
@@ -1330,6 +1341,9 @@
 
             // Load adjacent images
             loadAdjacentImages(filename);
+
+            // Update navigation state
+            updateNavigationState();
         }
 
         function updateMatchIndicator(elementId, matchType, id) {
@@ -1527,7 +1541,7 @@
             document.getElementById('reviewedCount').textContent = summary.reviewed;
             document.getElementById('approvedCount').textContent = summary.approved;
             document.getElementById('alreadyOnMOCount').textContent = summary.already_on_mo || 0;
-            document.getElementById('discardedCount').textContent = summary.discarded;
+            document.getElementById('excludedCount').textContent = summary.excluded;
         }
 
         async function submitReview(status) {
@@ -1584,7 +1598,7 @@
 
                 if (data.success) {
                     updateSummary(data.summary);
-                    nextImage();
+                    nextUnreviewedImage();
                 } else if (response.status === 409) {
                     // Claim conflict - lost the claim to another user
                     handleClaimLoss(data.claimed_by);
@@ -1597,37 +1611,114 @@
             }
         }
 
-        async function nextImage() {
-            if (!currentImage) return;
+        async function backImage() {
+            if (!currentImage || !navigationState) return;
             closePeek();
-            if (currentImage.nav.next) {
-                loadImage(currentImage.nav.next);
-            } else {
-                // Try to find next unreviewed
-                const next = await fetch('/api/next-unreviewed').then(r => r.json());
-                if (next.filename) {
-                    loadImage(next.filename);
-                } else {
-                    alert('All images reviewed!');
-                }
+
+            if (navigationState.back_target) {
+                await loadImage(navigationState.back_target, false); // Don't add to history
             }
         }
 
-        function prevImage() {
-            if (!currentImage || !currentImage.nav.prev) return;
+        async function forwardImage() {
+            if (!currentImage || !navigationState) return;
             closePeek();
-            loadImage(currentImage.nav.prev);
+
+            if (navigationState.forward_target) {
+                await loadImage(navigationState.forward_target, false); // Don't add to history
+            } else if (navigationState.all_resolved) {
+                showCelebration();
+            }
+        }
+
+        async function nextUnreviewedImage() {
+            closePeek();
+
+            console.log('nextUnreviewedImage called');
+            console.log('navigationState:', navigationState);
+
+            if (navigationState && navigationState.next_unreviewed) {
+                // Add to history only if jumping to priority order, not if in history
+                const addToHistory = navigationState.next_unreviewed_mode === 'priority';
+                console.log('Loading next unreviewed:', navigationState.next_unreviewed, 'addToHistory:', addToHistory);
+                await loadImage(navigationState.next_unreviewed, addToHistory);
+            } else if (navigationState && navigationState.all_resolved) {
+                showCelebration();
+            } else {
+                console.log('No next unreviewed image or navigation state not ready');
+            }
+        }
+
+        function showCelebration() {
+            alert('🎉 All images reviewed! Great work!');
+        }
+
+        async function updateNavigationState() {
+            if (!currentImage) return;
+
+            try {
+                const response = await fetch(`/api/navigation/${encodeURIComponent(currentImage.filename)}`);
+                navigationState = await response.json();
+                console.log('Navigation state updated:', navigationState);
+
+                // Update button states
+                const btnBack = document.getElementById('btnBack');
+                const btnForward = document.getElementById('btnForward');
+                const btnNextUnreviewed = document.getElementById('btnNextUnreviewed');
+
+                if (btnBack) {
+                    btnBack.disabled = !navigationState.can_go_back;
+                    btnBack.style.opacity = navigationState.can_go_back ? '1' : '0.5';
+                }
+
+                if (btnForward) {
+                    btnForward.disabled = !navigationState.can_go_forward;
+                    btnForward.style.opacity = navigationState.can_go_forward ? '1' : '0.5';
+                }
+
+                if (btnNextUnreviewed) {
+                    btnNextUnreviewed.disabled = navigationState.all_resolved;
+                    btnNextUnreviewed.style.opacity = navigationState.all_resolved ? '0.5' : '1';
+                }
+            } catch (error) {
+                console.error('Failed to update navigation state:', error);
+            }
         }
 
         function jumpToImage() {
             document.getElementById('jumpModal').classList.add('active');
             document.getElementById('jumpInput').value = '';
+            document.getElementById('jumpError').style.display = 'none';
             document.getElementById('jumpInput').focus();
-            document.getElementById('jumpResults').innerHTML = '';
         }
 
         function closeJumpModal() {
             document.getElementById('jumpModal').classList.remove('active');
+        }
+
+        async function executeJump() {
+            const filename = document.getElementById('jumpInput').value.trim();
+            if (!filename) return;
+
+            const errorEl = document.getElementById('jumpError');
+            errorEl.style.display = 'none';
+
+            // Try to load the image - the API will handle if it doesn't exist
+            try {
+                const response = await fetch(`/api/image/${encodeURIComponent(filename)}`);
+                const data = await response.json();
+
+                if (data.error) {
+                    errorEl.textContent = `Image "${filename}" not found`;
+                    errorEl.style.display = 'block';
+                } else {
+                    closeJumpModal();
+                    loadImage(filename);
+                }
+            } catch (error) {
+                errorEl.textContent = `Error: ${error.message}`;
+                errorEl.style.display = 'block';
+            }
         }
 
         function handleJumpInput(event) {
@@ -1636,30 +1727,9 @@
                 return;
             }
             if (event.key === 'Enter') {
-                const results = document.getElementById('jumpResults');
-                const first = results.querySelector('.candidate');
-                if (first) first.click();
+                executeJump();
                 return;
             }
-
-            const query = event.target.value.toLowerCase();
-            if (query.length < 2) {
-                document.getElementById('jumpResults').innerHTML = '';
-                return;
-            }
-
-            const matches = imageList.filter(img =>
-                img.filename.toLowerCase().includes(query) ||
-                (img.field_code && img.field_code.toLowerCase().includes(query))
-            ).slice(0, 10);
-
-            document.getElementById('jumpResults').innerHTML = matches.map(img => `
-                <div class="candidate" onclick="loadImage('${img.filename}'); closeJumpModal();">
-                    ${img.filename}
-                    ${img.field_code ? `<span style="color: #888;"> - ${img.field_code}</span>` : ''}
-                    ${img.status ? `<span class="status-badge status-${img.status}" style="margin-left: 10px;">${img.status}</span>` : ''}
-                </div>
-            `).join('');
         }
 
         // Date selector
@@ -1752,38 +1822,64 @@
 
         // Already on MO modal functions
         async function openAlreadyOnMOModal() {
+            if (!currentImage) return;
+
             document.getElementById('alreadyOnMOModal').classList.add('active');
             document.getElementById('moIdInput').value = '';
             document.getElementById('moVerificationStatus').style.display = 'none';
 
-            // Fetch suggestions for dropdown
-            try {
-                const response = await fetch('/api/already_on_mo_suggestions');
-                const data = await response.json();
-                const suggestions = data.suggestions || [];
+            // Build suggestions from current image data
+            const suggestions = [];
 
-                // Populate datalist
-                const datalist = document.getElementById('moIdSuggestions');
-                datalist.innerHTML = '';
-                suggestions.forEach(item => {
-                    const option = document.createElement('option');
-                    option.value = item;
-                    datalist.appendChild(option);
-                });
-
-                // Set default value to first suggestion if available
-                const input = document.getElementById('moIdInput');
-                if (suggestions.length > 0) {
-                    input.value = suggestions[0];
-                }
-
-                input.focus();
-                // Select the text so user can easily replace it
-                input.select();
-            } catch (error) {
-                console.error('Failed to load suggestions:', error);
-                document.getElementById('moIdInput').focus();
+            // Add field slip code from review form
+            const fieldCode = document.getElementById('reviewFieldCode').value.trim();
+            if (fieldCode) {
+                suggestions.push(fieldCode);
             }
+
+            // Add observation IDs from currentExistingObservations
+            currentExistingObservations.forEach(obs => {
+                if (obs.observation_id) {
+                    suggestions.push(obs.observation_id.toString());
+                }
+            });
+
+            // Populate select dropdown
+            const select = document.getElementById('moIdSelect');
+            select.innerHTML = '<option value="">-- Select existing --</option>';
+            suggestions.forEach(item => {
+                const option = document.createElement('option');
+                option.value = item;
+                option.textContent = item;
+                select.appendChild(option);
+            });
+
+            // Set default value to first suggestion if available
+            const input = document.getElementById('moIdInput');
+            if (suggestions.length > 0) {
+                select.value = suggestions[0];
+                input.value = '';
+            } else {
+                select.value = '';
+                input.value = '';
+            }
+
+            // When user selects from dropdown, blank the text input
+            select.onchange = function() {
+                input.value = '';
+                document.getElementById('moVerificationStatus').style.display = 'none';
+            };
+
+            // When user types in text input, reset dropdown
+            input.oninput = function() {
+                if (this.value) {
+                    select.value = '';
+                }
+                document.getElementById('moVerificationStatus').style.display = 'none';
+            };
+
+            input.focus();
+            input.select();
         }
 
         function closeAlreadyOnMOModal() {
@@ -1868,10 +1964,13 @@
         async function submitAlreadyOnMO() {
             if (!currentImage) return;
 
-            const rawInput = document.getElementById('moIdInput').value.trim();
+            // Check dropdown first, then text input
+            const select = document.getElementById('moIdSelect');
+            const input = document.getElementById('moIdInput');
+            const rawInput = (input.value.trim() || select.value).trim();
 
             if (!rawInput) {
-                alert('Please enter an ID or URL');
+                alert('Please select from dropdown or enter an ID');
                 return;
             }
 
@@ -1921,7 +2020,7 @@
                 if (data.success) {
                     closeAlreadyOnMOModal();
                     updateSummary(data.summary);
-                    nextImage();
+                    nextUnreviewedImage();
                 } else if (response.status === 409) {
                     // Claim conflict - lost the claim to another user
                     closeAlreadyOnMOModal();
@@ -2011,7 +2110,7 @@
                         if (reviewResult && reviewResult.summary) {
                             updateSummary(reviewResult.summary);
                         }
-                        nextImage();
+                        nextUnreviewedImage();
                     }, 1500);
                 } else {
                     statusEl.className = 'mo-status-error';
@@ -2094,7 +2193,7 @@
                         if (reviewResult && reviewResult.summary) {
                             updateSummary(reviewResult.summary);
                         }
-                        nextImage();
+                        nextUnreviewedImage();
                     }, 1500);
                 } else {
                     statusEl.className = 'mo-status-error';

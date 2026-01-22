@@ -32,6 +32,10 @@ mo_base_url = 'https://mushroomobserver.org'  # MO API base URL (configurable)
 # Locking state
 claims = {}  # {filename: {"user": username, "claimed_at": datetime, "heartbeat": datetime}}
 claims_lock = Lock()
+
+# View history per user (most recent first)
+view_history = {}  # {username: [filename1, filename2, ...]}
+view_history_lock = Lock()
 CLAIM_TIMEOUT_MINUTES = 10
 CLAIM_OVERRIDE_MINUTES = 30
 
@@ -235,6 +239,92 @@ def try_claim_multiple(filenames, username):
         return (True, [])
 
 
+def add_to_view_history(filename, username):
+    """Add image to user's view history (most recent first)."""
+    with view_history_lock:
+        if username not in view_history:
+            view_history[username] = []
+
+        history = view_history[username]
+
+        # Remove if already in history
+        if filename in history:
+            history.remove(filename)
+
+        # Add to front
+        history.insert(0, filename)
+
+        # Keep history reasonable size (last 100 views)
+        if len(history) > 100:
+            view_history[username] = history[:100]
+
+
+def get_view_history(username):
+    """Get user's view history (most recent first)."""
+    with view_history_lock:
+        return view_history.get(username, []).copy()
+
+
+def is_resolved(status):
+    """Check if an image status is considered resolved."""
+    return status in ('already_on_mo', 'excluded') or status is not None
+
+
+def is_all_resolved():
+    """Check if all images are resolved."""
+    for img in review_data['images'].values():
+        status = img['review'].get('status')
+        mo_obs_id = img['review'].get('mo_observation_id')
+        # Resolved if: has status (already_on_mo/excluded) or uploaded to MO
+        if not status and not mo_obs_id:
+            return False
+    return True
+
+
+def get_next_unreviewed_for_user(username, current_filename=None):
+    """
+    Get next unreviewed image for user in priority order.
+    Skips images locked by other users.
+    Prioritizes user's own soft-locked images first.
+    If current_filename is provided, starts searching after that image.
+    """
+    sorted_images = get_sorted_images()
+
+    # If current_filename provided, start searching after it
+    start_index = 0
+    if current_filename and current_filename in sorted_images:
+        start_index = sorted_images.index(current_filename) + 1
+
+    # Create search list (from start_index onwards, then wrap around)
+    search_list = sorted_images[start_index:] + sorted_images[:start_index]
+
+    # First check for user's own soft-locked unresolved images
+    for filename in search_list:
+        img = review_data['images'][filename]
+        status = img['review'].get('status')
+        mo_obs_id = img['review'].get('mo_observation_id')
+        resolved = status in ('already_on_mo', 'excluded') or mo_obs_id
+
+        if not resolved:
+            claim = get_claim(filename)
+            if claim and claim['user'] == username:
+                return filename
+
+    # Then look for unreviewed/unresolved images not locked by others
+    for filename in search_list:
+        img = review_data['images'][filename]
+        status = img['review'].get('status')
+        mo_obs_id = img['review'].get('mo_observation_id')
+        resolved = status in ('already_on_mo', 'excluded') or mo_obs_id
+
+        if not resolved:
+            claim = get_claim(filename)
+            if not claim or claim['user'] == username:
+                return filename
+
+    return None
+
+
 # Data loading functions
 def load_data(path):
     """Load review data from JSON file."""
@@ -275,7 +365,7 @@ def save_data():
         summary['reviewed'] = 0
         summary['approved'] = 0
         summary['corrected'] = 0
-        summary['discarded'] = 0
+        summary['excluded'] = 0
         summary['already_on_mo'] = 0
 
         for img in review_data['images'].values():
@@ -286,8 +376,8 @@ def save_data():
                     summary['approved'] += 1
                 elif status == 'corrected':
                     summary['corrected'] += 1
-                elif status == 'discarded':
-                    summary['discarded'] += 1
+                elif status == 'excluded':
+                    summary['excluded'] += 1
                 elif status == 'already_on_mo':
                     summary['already_on_mo'] += 1
 
@@ -389,6 +479,11 @@ def api_image(filename):
     # Try to claim the image
     success, message, claimed_by = try_claim(filename, username)
 
+    # Track view history only if requested (to avoid adding Back/Forward nav to history)
+    add_to_history = request.args.get('add_to_history', 'false').lower() == 'true'
+    if add_to_history:
+        add_to_view_history(filename, username)
+
     img = review_data['images'][filename]
     nav = get_navigation_context(filename)
 
@@ -404,6 +499,61 @@ def api_image(filename):
             'claimed_by': claimed_by,
             'is_mine': claimed_by == username
         }
+    })
+
+
+@app.route('/api/navigation/<path:filename>')
+@requires_auth
+def api_navigation(filename):
+    """Get navigation info for current image based on user's view history."""
+    username = get_current_user()
+    history = get_view_history(username)
+
+    # Find current position in history
+    current_index = history.index(filename) if filename in history else -1
+
+    # Determine navigation options
+    can_go_back = current_index >= 0 and current_index < len(history) - 1
+    can_go_forward_in_history = current_index > 0
+
+    # Get back/forward targets
+    back_target = history[current_index + 1] if can_go_back else None
+    forward_target_history = history[current_index - 1] if can_go_forward_in_history else None
+
+    # Check if there's an unreviewed image ahead in history
+    next_unreviewed_in_history = None
+    if current_index >= 0:
+        for i in range(current_index - 1, -1, -1):
+            hist_filename = history[i]
+            img = review_data['images'].get(hist_filename)
+            if img:
+                status = img['review'].get('status')
+                mo_obs_id = img['review'].get('mo_observation_id')
+                resolved = status in ('already_on_mo', 'excluded') or mo_obs_id
+                if not resolved:
+                    next_unreviewed_in_history = hist_filename
+                    break
+
+    # Get next unreviewed image after current (priority order, skip others' locks)
+    next_unreviewed_priority = get_next_unreviewed_for_user(username, current_filename=filename)
+
+    # Determine next unreviewed target (prefer history, then priority)
+    next_unreviewed = next_unreviewed_in_history or next_unreviewed_priority
+    next_unreviewed_mode = 'history' if next_unreviewed_in_history else 'priority'
+
+    # Check if all resolved
+    all_resolved = is_all_resolved()
+
+    return jsonify({
+        'current_index': current_index,
+        'history_length': len(history),
+        'can_go_back': can_go_back,
+        'can_go_forward': can_go_forward_in_history,
+        'back_target': back_target,
+        'forward_target': forward_target_history,
+        'next_unreviewed': next_unreviewed,
+        'next_unreviewed_mode': next_unreviewed_mode,
+        'all_resolved': all_resolved
     })
 
 
@@ -632,12 +782,14 @@ def api_unlink_image(filename):
 @app.route('/api/next-unreviewed')
 @requires_auth
 def api_next_unreviewed():
-    """Get the next unreviewed image by priority."""
-    sorted_images = get_sorted_images()
-    for filename in sorted_images:
-        if not review_data['images'][filename]['review'].get('status'):
-            return jsonify({'filename': filename})
-    return jsonify({'filename': None, 'message': 'All images reviewed!'})
+    """Get the next unreviewed image for this user (skips others' locks)."""
+    username = get_current_user()
+    filename = get_next_unreviewed_for_user(username)
+
+    if filename:
+        return jsonify({'filename': filename})
+    else:
+        return jsonify({'filename': None, 'message': 'All images reviewed!'})
 
 
 @app.route('/api/lookup/location')
@@ -749,34 +901,6 @@ def api_lookup_existing_observations():
                     results.append(obs)
 
     return jsonify(results)
-
-
-@app.route('/api/already_on_mo_suggestions')
-@requires_auth
-def api_already_on_mo_suggestions():
-    """Get suggestions for Already on MO: field slip codes and observation IDs."""
-    field_slips = set()
-    observation_ids = set()
-
-    # Collect unique field slip codes and observation IDs from all images
-    for img in review_data['images'].values():
-        src = img.get('source', {})
-
-        # Add field slip code if present
-        field_code = src.get('field_code')
-        if field_code:
-            field_slips.add(field_code)
-
-        # Add observation IDs from existing_observations
-        for obs in src.get('existing_observations', []):
-            obs_id = obs.get('observation_id')
-            if obs_id:
-                observation_ids.add(str(obs_id))
-
-    # Combine and sort: field slips first (alphabetically), then observation IDs (numerically)
-    suggestions = sorted(field_slips) + sorted(observation_ids, key=lambda x: int(x))
-
-    return jsonify({'suggestions': suggestions})
 
 
 @app.route('/api/verify_mo_id')
