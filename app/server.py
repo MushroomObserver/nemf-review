@@ -423,7 +423,7 @@ def get_navigation_context(current_filename):
 @requires_auth
 def index():
     """Main review page."""
-    return render_template('review.html')
+    return render_template('review.html', mo_base_url=mo_base_url)
 
 
 @app.route('/api/whoami')
@@ -909,6 +909,82 @@ def api_lookup_existing_observations():
                     results.append(obs)
 
     return jsonify(results)
+
+
+@app.route('/api/lookup/field_slip_observation')
+@requires_auth
+def api_lookup_field_slip_observation():
+    """Look up observation ID for a field slip code using MO API."""
+    code = request.args.get('code', '')
+    if not code:
+        return jsonify({'error': 'Missing code parameter'}), 400
+
+    try:
+        from mo_api_client import MOAPIClient, MOAPIError
+        import sys
+
+        username = get_current_user()
+        user_config = users.get(username)
+        if not user_config:
+            return jsonify({'error': 'User not found'}), 401
+
+        client = MOAPIClient(
+            base_url=mo_base_url,
+            api_key=user_config.get('api_key')
+        )
+
+        sys.stderr.write(f"Looking up field slip: {code} with detail=low\n")
+        sys.stderr.flush()
+
+        field_slip = client.get_field_slip_by_code(code, detail='low')
+        sys.stderr.write(f"Field slip response type: {type(field_slip)}\n")
+        sys.stderr.write(f"Field slip response: {field_slip}\n")
+        sys.stderr.flush()
+
+        if field_slip:
+            # Try multiple possible field names for observation_id
+            observation_id = None
+
+            if isinstance(field_slip, dict):
+                # Try common field names
+                observation_id = (
+                    field_slip.get('observation_id') or
+                    field_slip.get('observation') or
+                    field_slip.get('obs_id')
+                )
+
+                sys.stderr.write(f"Extracted observation_id: {observation_id}\n")
+                sys.stderr.write(f"Field slip keys: {list(field_slip.keys())}\n")
+                sys.stderr.flush()
+            else:
+                sys.stderr.write(f"Field slip response is not a dict, it's a {type(field_slip)}\n")
+                sys.stderr.flush()
+
+            if observation_id:
+                return jsonify({
+                    'observation_id': observation_id,
+                    'field_slip_code': code
+                })
+
+        sys.stderr.write(f"No observation_id found for field slip {code}\n")
+        sys.stderr.flush()
+
+        return jsonify({
+            'observation_id': None,
+            'message': 'Field slip not linked to an observation',
+            'debug_data': field_slip if field_slip else None
+        })
+
+    except MOAPIError as e:
+        sys.stderr.write(f"MOAPIError in field slip lookup: {e}\n")
+        sys.stderr.flush()
+        return jsonify({'error': f'MO API error: {str(e)}'}), 500
+    except Exception as e:
+        import traceback
+        sys.stderr.write(f"Exception in field slip lookup: {e}\n")
+        traceback.print_exc()
+        sys.stderr.flush()
+        return jsonify({'error': f'Lookup failed: {str(e)}'}), 500
 
 
 @app.route('/api/verify_mo_id')

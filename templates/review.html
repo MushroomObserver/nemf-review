@@ -848,11 +848,13 @@
             <h2>Add to Existing Observation</h2>
             <p style="font-size: 13px; color: #888;">
                 Upload this image to an existing MO observation.
+                Select from dropdown or enter an Observation ID (number) or Field Slip Code.
             </p>
-            <div class="field">
-                <label>Observation ID</label>
-                <input type="text" id="phase4ObsId" placeholder="Enter observation ID (e.g., 625778)" onkeyup="if(event.key==='Enter') uploadPhase4()">
-            </div>
+            <select class="mo-id-input" id="phase4Select" style="width: 100%; margin-bottom: 10px;">
+                <option value="">-- Select existing --</option>
+            </select>
+            <input type="text" class="mo-id-input" id="phase4Input" placeholder="Or enter Observation ID or Field Slip Code">
+            <div id="phase4VerificationStatus" class="verification-status" style="display: none;"></div>
             <div id="phase4Status" style="display: none; padding: 10px; border-radius: 4px; font-size: 12px; margin-top: 10px;"></div>
             <div style="display: flex; gap: 10px; margin-top: 20px;">
                 <button class="btn-mo-phase4" onclick="uploadPhase4()">Upload</button>
@@ -862,6 +864,9 @@
     </div>
 
     <script>
+        // MO base URL from server config
+        const MO_BASE_URL = "{{ mo_base_url }}";
+
         let currentImage = null;
         let imageList = [];
         let nemfDates = [];
@@ -1082,8 +1087,8 @@
             const code = document.getElementById('reviewFieldCode').value;
             const link = document.getElementById('reviewFieldSlipLink');
             if (code && code.startsWith('NEMF-')) {
-                link.href = `https://mushroomobserver.org/qr/${code}`;
-                link.style.display = 'inline';
+                // Check if field slip exists on MO
+                checkFieldSlipExists(code, 'reviewFieldSlipLink');
                 // Also look up existing observations for this code
                 updateReviewExistingObs(code);
             } else {
@@ -1229,8 +1234,8 @@
             // Update field slip link
             const fieldSlipLink = document.getElementById('fieldSlipLink');
             if (src.field_code && src.field_code.startsWith('NEMF-')) {
-                fieldSlipLink.href = `https://mushroomobserver.org/qr/${src.field_code}`;
-                fieldSlipLink.style.display = 'inline';
+                // Check if field slip exists on MO
+                checkFieldSlipExists(src.field_code);
             } else {
                 fieldSlipLink.style.display = 'none';
             }
@@ -1424,8 +1429,8 @@
             // Update peek field slip link
             const peekLink = document.getElementById('peekFieldSlipLink');
             if (peekCode && peekCode.startsWith('NEMF-')) {
-                peekLink.href = `https://mushroomobserver.org/qr/${peekCode}`;
-                peekLink.style.display = 'inline';
+                // Check if field slip exists on MO
+                checkFieldSlipExists(peekCode, 'peekFieldSlipLink');
             } else {
                 peekLink.style.display = 'none';
             }
@@ -1824,10 +1829,13 @@
             // Build suggestions from current image data
             const suggestions = [];
 
-            // Add field slip code from review form
+            // Add field slip code from review form (only if it exists on MO)
             const fieldCode = document.getElementById('reviewFieldCode').value.trim();
-            if (fieldCode) {
-                suggestions.push(fieldCode);
+            if (fieldCode && fieldCode.startsWith('NEMF-')) {
+                const fieldSlipExists = await checkFieldSlipExistsForSuggestions(fieldCode);
+                if (fieldSlipExists) {
+                    suggestions.push(fieldCode);
+                }
             }
 
             // Add observation IDs from currentExistingObservations
@@ -1839,7 +1847,7 @@
 
             // Populate select dropdown
             const select = document.getElementById('moIdSelect');
-            select.innerHTML = '<option value="">-- Select existing --</option>';
+            select.innerHTML = '';
             suggestions.forEach(item => {
                 const option = document.createElement('option');
                 option.value = item;
@@ -1853,7 +1861,6 @@
                 select.value = suggestions[0];
                 input.value = '';
             } else {
-                select.value = '';
                 input.value = '';
             }
 
@@ -1919,10 +1926,16 @@
             // Parse MO ID from input - can be URL, observation ID, or field slip code
             input = input.trim();
 
+            // Get expected hostname from MO_BASE_URL
+            const moUrl = new URL(MO_BASE_URL);
+            const expectedHostname = moUrl.hostname;
+
             // Try to parse as URL
             try {
                 const url = new URL(input);
-                if (url.hostname === 'mushroomobserver.org' || url.hostname === 'www.mushroomobserver.org') {
+                if (url.hostname === expectedHostname ||
+                    url.hostname === 'mushroomobserver.org' ||
+                    url.hostname === 'www.mushroomobserver.org') {
                     const path = url.pathname;
 
                     // Match patterns like /observations/12345
@@ -2028,25 +2041,229 @@
         }
 
         // Phase 4 - Add to Existing Observation
-        function openPhase4Modal() {
+        async function openPhase4Modal() {
             if (!currentImage) return;
+
             document.getElementById('phase4Modal').classList.add('active');
-            document.getElementById('phase4ObsId').value = '';
+            document.getElementById('phase4Input').value = '';
+            document.getElementById('phase4VerificationStatus').style.display = 'none';
             document.getElementById('phase4Status').style.display = 'none';
-            document.getElementById('phase4ObsId').focus();
+
+            // Build suggestions from current image data
+            const suggestions = [];
+
+            // Add field slip code from review form (only if it exists on MO)
+            const fieldCode = document.getElementById('reviewFieldCode').value.trim();
+            if (fieldCode && fieldCode.startsWith('NEMF-')) {
+                const fieldSlipExists = await checkFieldSlipExistsForSuggestions(fieldCode);
+                if (fieldSlipExists) {
+                    suggestions.push(fieldCode);
+                }
+            }
+
+            // Add observation IDs from currentExistingObservations
+            currentExistingObservations.forEach(obs => {
+                if (obs.observation_id) {
+                    suggestions.push(obs.observation_id.toString());
+                }
+            });
+
+            // Populate select dropdown
+            const select = document.getElementById('phase4Select');
+            select.innerHTML = '';
+            suggestions.forEach((item, index) => {
+                const option = document.createElement('option');
+                option.value = item;
+                option.textContent = item;
+                select.appendChild(option);
+            });
+
+            // Default to first item if available
+            if (suggestions.length > 0) {
+                select.value = suggestions[0];
+            }
+
+            // Coordinate select and input interaction
+            select.onchange = function() {
+                document.getElementById('phase4Input').value = '';
+                document.getElementById('phase4VerificationStatus').style.display = 'none';
+            };
+
+            const input = document.getElementById('phase4Input');
+            input.oninput = function() {
+                if (this.value) {
+                    select.value = '';
+                }
+                document.getElementById('phase4VerificationStatus').style.display = 'none';
+            };
+
+            input.focus();
+            input.select();
         }
 
         function closePhase4Modal() {
             document.getElementById('phase4Modal').classList.remove('active');
         }
 
+        async function resolveFieldSlipToObservation(fieldSlipCode) {
+            /**
+             * Look up a field slip code and return its observation ID.
+             * Returns null if the field slip doesn't exist or isn't linked to an observation.
+             */
+            try {
+                const response = await fetch(`/api/lookup/field_slip_observation?code=${encodeURIComponent(fieldSlipCode)}`);
+                const data = await response.json();
+
+                console.log('Field slip lookup response:', data);
+
+                if (data.observation_id) {
+                    return data.observation_id;
+                }
+
+                // Log debug data if available
+                if (data.debug_data) {
+                    console.log('Field slip data from API:', data.debug_data);
+                }
+
+                return null;
+            } catch (error) {
+                console.error('Field slip lookup error:', error);
+                return null;
+            }
+        }
+
+        async function checkFieldSlipExistsForSuggestions(fieldSlipCode) {
+            /**
+             * Check if a field slip exists on MO.
+             * Returns true if exists, false if doesn't exist.
+             * Used for filtering dropdown suggestions.
+             */
+            try {
+                const response = await fetch(
+                    `/api/verify_mo_id?type=field_slip&id=${encodeURIComponent(fieldSlipCode)}`
+                );
+                const data = await response.json();
+                return data.exists || false;
+            } catch (error) {
+                console.error('Field slip existence check error:', error);
+                return false;
+            }
+        }
+
+        async function checkFieldSlipExists(fieldSlipCode, linkElementId = 'fieldSlipLink') {
+            /**
+             * Check if a field slip exists on MO and update the link accordingly.
+             * Shows "View on MO" link if exists, "NOT ON MO" text if doesn't exist.
+             */
+            const fieldSlipLink = document.getElementById(linkElementId);
+
+            try {
+                const response = await fetch(
+                    `/api/verify_mo_id?type=field_slip&id=${encodeURIComponent(fieldSlipCode)}`
+                );
+                const data = await response.json();
+
+                if (data.exists) {
+                    // Field slip exists - show as link
+                    fieldSlipLink.href = `${MO_BASE_URL}/qr/${fieldSlipCode}`;
+                    fieldSlipLink.textContent = 'View on MO';
+                    fieldSlipLink.style.pointerEvents = 'auto';
+                    fieldSlipLink.style.textDecoration = 'underline';
+                    fieldSlipLink.style.cursor = 'pointer';
+                    fieldSlipLink.style.color = '#74b9ff';
+                    fieldSlipLink.style.display = 'inline';
+                } else {
+                    // Field slip doesn't exist - show as plain text
+                    fieldSlipLink.removeAttribute('href');
+                    fieldSlipLink.textContent = 'NOT ON MO';
+                    fieldSlipLink.style.pointerEvents = 'none';
+                    fieldSlipLink.style.textDecoration = 'none';
+                    fieldSlipLink.style.cursor = 'default';
+                    fieldSlipLink.style.color = '#888';
+                    fieldSlipLink.style.display = 'inline';
+                }
+            } catch (error) {
+                console.error('Field slip existence check error:', error);
+                // On error, hide the link
+                fieldSlipLink.style.display = 'none';
+            }
+        }
+
+        async function verifyPhase4Input(idType, idValue) {
+            const statusEl = document.getElementById('phase4VerificationStatus');
+            statusEl.style.display = 'block';
+            statusEl.className = 'verification-status verifying';
+            statusEl.textContent = 'Verifying...';
+
+            try {
+                const response = await fetch(
+                    `/api/verify_mo_id?type=${idType}&id=${encodeURIComponent(idValue)}`
+                );
+                const data = await response.json();
+
+                if (data.exists) {
+                    statusEl.className = 'verification-status success';
+                    if (idType === 'observation') {
+                        statusEl.textContent = `✓ Observation #${idValue} exists`;
+                    } else if (idType === 'field_slip') {
+                        statusEl.textContent = `✓ Field Slip "${idValue}" exists`;
+                    }
+                    return true;
+                } else {
+                    statusEl.className = 'verification-status error';
+                    if (idType === 'observation') {
+                        statusEl.textContent = `✗ Observation #${idValue} not found`;
+                    } else if (idType === 'field_slip') {
+                        statusEl.textContent = `✗ Field Slip "${idValue}" not found`;
+                    }
+                    return false;
+                }
+            } catch (error) {
+                statusEl.className = 'verification-status error';
+                statusEl.textContent = '✗ Verification failed: ' + error.message;
+                return false;
+            }
+        }
+
         async function uploadPhase4() {
             if (!currentImage) return;
 
-            const obsId = document.getElementById('phase4ObsId').value.trim();
-            if (!obsId) {
-                alert('Please enter an observation ID');
+            // Check dropdown first, then text input
+            const select = document.getElementById('phase4Select');
+            const input = document.getElementById('phase4Input');
+            const rawInput = (input.value.trim() || select.value).trim();
+
+            if (!rawInput) {
+                alert('Please select from dropdown or enter an ID');
                 return;
+            }
+
+            // Parse the input
+            const parsed = parseMOIdFromInput(rawInput);
+            if (!parsed) {
+                alert('Invalid input. Please enter a valid Observation ID or Field Slip Code.');
+                return;
+            }
+
+            const idType = parsed.type;
+            const idValue = parsed.id;
+
+            // Verify the ID exists
+            const isValid = await verifyPhase4Input(idType, idValue);
+            if (!isValid) {
+                return;
+            }
+
+            // If it's a field slip, resolve to observation ID
+            let observationId;
+            if (idType === 'field_slip') {
+                observationId = await resolveFieldSlipToObservation(idValue);
+                if (!observationId) {
+                    alert(`Field slip "${idValue}" exists but is not linked to an observation.\n\nPlease use an observation ID instead, or check the browser console for debug information.`);
+                    return;
+                }
+            } else {
+                observationId = parseInt(idValue);
             }
 
             // Check if already uploaded
@@ -2066,7 +2283,7 @@
 
             const uploadData = {
                 filename: currentImage.filename,
-                observation_id: parseInt(obsId),
+                observation_id: observationId,
                 field_code: document.getElementById('reviewFieldCode').value.trim(),
                 project_id: 389
             };
@@ -2091,10 +2308,17 @@
                     statusEl.innerHTML = `✓ Success! Uploaded ${imageText}<br>` +
                         `<a href="${data.observation_url}" target="_blank" style="color: #000; text-decoration: underline;">View Observation #${data.observation_id}</a>`;
 
-                    // Submit review with MO metadata
+                    // Submit review with MO metadata for main image
                     const reviewResult = await submitReviewWithMOData(
                         data.observation_id,
                         data.image_id,
+                        data.observation_url
+                    );
+
+                    // Update reviews for all linked images
+                    await updateLinkedImagesReviews(
+                        data.uploaded_images,
+                        data.observation_id,
                         data.observation_url
                     );
 
@@ -2175,10 +2399,17 @@
                     statusEl.innerHTML = `✓ Success! Created observation with ${imageText}<br>` +
                         `<a href="${data.observation_url}" target="_blank" style="color: #000; text-decoration: underline;">View Observation #${data.observation_id}</a>`;
 
-                    // Submit review with MO metadata
+                    // Submit review with MO metadata for main image
                     const reviewResult = await submitReviewWithMOData(
                         data.observation_id,
                         data.image_id,
+                        data.observation_url
+                    );
+
+                    // Update reviews for all linked images
+                    await updateLinkedImagesReviews(
+                        data.uploaded_images,
+                        data.observation_id,
                         data.observation_url
                     );
 
@@ -2259,6 +2490,52 @@
                 console.error('Failed to save review data:', data.error);
             }
             return data;
+        }
+
+        // Update all linked images' reviews after upload
+        async function updateLinkedImagesReviews(uploadedImages, observationId, observationUrl) {
+            /**
+             * Update review data for all linked images that were uploaded.
+             * uploadedImages is an array of {filename, image_id} objects.
+             */
+            if (!uploadedImages || uploadedImages.length <= 1) {
+                // No linked images to update (only main image)
+                return;
+            }
+
+            // Skip the first image (main image) and update the rest (linked images)
+            const linkedImages = uploadedImages.slice(1);
+
+            for (const img of linkedImages) {
+                try {
+                    // Prepare review data for linked image
+                    const reviewData = {
+                        status: 'approved',  // Linked images are auto-approved
+                        mo_observation_id: observationId,
+                        mo_image_id: img.image_id,
+                        mo_observation_url: observationUrl
+                    };
+
+                    // Submit review for this linked image
+                    const response = await fetch(
+                        `/api/image/${encodeURIComponent(img.filename)}/review`,
+                        {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify(reviewData)
+                        }
+                    );
+
+                    const data = await response.json();
+                    if (!data.success) {
+                        console.error(`Failed to update review for linked image ${img.filename}:`, data.error);
+                    } else {
+                        console.log(`Updated review for linked image ${img.filename}`);
+                    }
+                } catch (error) {
+                    console.error(`Error updating linked image ${img.filename}:`, error);
+                }
+            }
         }
 
         function showMOUploadStatus(type, message) {

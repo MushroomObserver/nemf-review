@@ -378,12 +378,13 @@ class MOAPIClient:
             skip_auth=True  # API key is in form data
         )
 
-    def get_field_slip_by_code(self, code: str) -> Optional[Dict[str, Any]]:
+    def get_field_slip_by_code(self, code: str, detail: str = 'low') -> Optional[Dict[str, Any]]:
         """
         Look up field slip by code.
 
         Args:
             code: Field slip code (e.g., "NEMF-12345")
+            detail: Detail level ('low' or 'high') - needed to get observation_id
 
         Returns:
             Field slip data if found, None if not found
@@ -395,7 +396,7 @@ class MOAPIClient:
             response = self._request(
                 'GET',
                 '/api2/field_slips',
-                params={'code': code}
+                params={'code': code, 'detail': detail}
             )
             # API returns array of results
             results = response.get('results', [])
