@@ -39,6 +39,28 @@ def load_extracted_data(path):
         return json.load(f)
 
 
+def load_existing_field_codes(csv_path):
+    """Load existing field slip codes from manual_fix_combined.csv.
+
+    Returns set of field slip codes that are already in the project.
+    """
+    import csv
+    existing_codes = set()
+
+    if not os.path.exists(csv_path):
+        print(f"Warning: {csv_path} not found, all field codes will be treated as new")
+        return existing_codes
+
+    with open(csv_path) as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            code = row.get('consensus_code', '').strip()
+            if code and code.startswith('NEMF-'):
+                existing_codes.add(code)
+
+    return existing_codes
+
+
 def load_location_priorities(tsv_path):
     """Load location priority rankings from TSV file.
 
@@ -298,18 +320,19 @@ def export_all_locations(conn, output_path):
     return len(locations)
 
 
-def calculate_priority(image_data, location_lookup, name_lookup, location_priorities):
+def calculate_priority(image_data, location_lookup, name_lookup, location_priorities, existing_field_codes):
     """
     Calculate review priority (lower = review first).
 
     Returns a tuple: (priority_class, location_priority, has_issues)
 
     Priority classes:
-    0. No field code at all
-    1. No location data or unknown location
-    2. Has location but unknown name
-    3. Has null/low confidence data
-    4. Complete data with high confidence
+    0. NEW field slip code (not in project yet) - brand new observations to create
+    1. No field code at all
+    2. Existing field slip code with no/unknown location
+    3. Existing field slip code with no/unknown name
+    4. Existing field slip code with low confidence data
+    5. Existing field slip code with complete, high confidence data
 
     Within each class, images are further sorted by:
     - location_priority (from location-priorities.tsv, lower = first)
@@ -331,34 +354,39 @@ def calculate_priority(image_data, location_lookup, name_lookup, location_priori
     has_null_data = not all([field_code, image_data.get('Date'), location, name_id])
     has_issues = low_confidence or has_null_data
 
-    # No field code at all - highest priority
-    if not field_code:
+    # NEW field slip code (not in existing project) - HIGHEST PRIORITY
+    if field_code and field_code not in existing_field_codes:
         return (0, loc_priority, not has_issues)
 
+    # No field code at all
+    if not field_code:
+        return (1, loc_priority, not has_issues)
+
+    # From here on, these are existing field slip codes in the project
     # No location or unmatched location
     if not location:
-        return (1, loc_priority, not has_issues)
+        return (2, loc_priority, not has_issues)
     loc_match = location_lookup.get(location, {}).get('match', 'none')
     if loc_match == 'none':
-        return (1, loc_priority, not has_issues)
+        return (2, loc_priority, not has_issues)
 
     # Has location but no/unmatched name
     if not name_id:
-        return (2, loc_priority, not has_issues)
+        return (3, loc_priority, not has_issues)
     name_match = name_lookup.get(name_id, {}).get('match', 'none')
     if name_match == 'none':
-        return (2, loc_priority, not has_issues)
+        return (3, loc_priority, not has_issues)
 
     # Check confidence levels
     if low_confidence:
-        return (3, loc_priority, not has_issues)
+        return (4, loc_priority, not has_issues)
 
     # Complete with high confidence
-    return (4, loc_priority, not has_issues)
+    return (5, loc_priority, not has_issues)
 
 
 def prepare_review_data(extracted_data, existing_obs, location_lookup, name_lookup,
-                        location_priorities):
+                        location_priorities, existing_field_codes):
     """Prepare the review data structure."""
     images = {}
 
@@ -378,7 +406,7 @@ def prepare_review_data(extracted_data, existing_obs, location_lookup, name_look
         loc_info = location_lookup.get(location, {}) if location else {}
         name_info = name_lookup.get(name_id, {}) if name_id else {}
 
-        priority = calculate_priority(item, location_lookup, name_lookup, location_priorities)
+        priority = calculate_priority(item, location_lookup, name_lookup, location_priorities, existing_field_codes)
 
         images[filename] = {
             'source': {
@@ -427,6 +455,7 @@ def main():
     base_dir = Path(__file__).parent.parent
     extracted_path = base_dir / 'nemf-photos' / 'extracted_data_full.json'
     csv_path = base_dir / 'nemf-report' / 'nemf_inat_combined.csv'
+    manual_fix_path = base_dir / 'nemf-report' / 'manual_fix_combined.csv'
     priorities_path = base_dir / 'nemf-photos' / 'location-priorities.tsv'
     images_dir = base_dir / 'nemf-photos' / 'scaled-25pct'
 
@@ -437,6 +466,10 @@ def main():
     print(f"Loading location priorities from {priorities_path}")
     location_priorities = load_location_priorities(priorities_path)
     print(f"Loaded {len(location_priorities)} location priorities")
+
+    print(f"Loading existing field slip codes from {manual_fix_path}")
+    existing_field_codes = load_existing_field_codes(manual_fix_path)
+    print(f"Loaded {len(existing_field_codes)} existing field slip codes from project")
 
     print(f"Loading existing observations from {csv_path}")
     existing_obs = load_existing_observations(csv_path)
@@ -479,7 +512,7 @@ def main():
 
     print("Preparing review data...")
     images = prepare_review_data(extracted_data, existing_obs, location_lookup, name_lookup,
-                                 location_priorities)
+                                 location_priorities, existing_field_codes)
 
     # Count by priority class (first element of priority tuple)
     priority_counts = {}
@@ -526,11 +559,12 @@ def main():
     print("\nPriority breakdown:")
     for p in sorted(priority_counts.keys()):
         desc = {
-            0: "No field code",
-            1: "No/unknown location",
-            2: "No/unknown name",
-            3: "Low confidence data",
-            4: "Complete, high confidence"
+            0: "NEW field slip (not in project)",
+            1: "No field code",
+            2: "Existing field slip - no/unknown location",
+            3: "Existing field slip - no/unknown name",
+            4: "Existing field slip - low confidence data",
+            5: "Existing field slip - complete, high confidence"
         }.get(p, "Unknown")
         print(f"  Priority {p} ({desc}): {priority_counts[p]}")
 

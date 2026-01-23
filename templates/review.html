@@ -1634,18 +1634,12 @@
         async function nextUnreviewedImage() {
             closePeek();
 
-            console.log('nextUnreviewedImage called');
-            console.log('navigationState:', navigationState);
-
             if (navigationState && navigationState.next_unreviewed) {
                 // Add to history only if jumping to priority order, not if in history
                 const addToHistory = navigationState.next_unreviewed_mode === 'priority';
-                console.log('Loading next unreviewed:', navigationState.next_unreviewed, 'addToHistory:', addToHistory);
                 await loadImage(navigationState.next_unreviewed, addToHistory);
             } else if (navigationState && navigationState.all_resolved) {
                 showCelebration();
-            } else {
-                console.log('No next unreviewed image or navigation state not ready');
             }
         }
 
@@ -1659,7 +1653,6 @@
             try {
                 const response = await fetch(`/api/navigation/${encodeURIComponent(currentImage.filename)}`);
                 navigationState = await response.json();
-                console.log('Navigation state updated:', navigationState);
 
                 // Update button states
                 const btnBack = document.getElementById('btnBack');

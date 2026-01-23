@@ -281,12 +281,13 @@ def is_all_resolved():
     return True
 
 
-def get_next_unreviewed_for_user(username, current_filename=None):
+def get_next_unreviewed_for_user(username, current_filename=None, exclude_history=None):
     """
     Get next unreviewed image for user in priority order.
     Skips images locked by other users.
     Prioritizes user's own soft-locked images first.
     If current_filename is provided, starts searching after that image.
+    If exclude_history is provided, skips images in that list.
     """
     sorted_images = get_sorted_images()
 
@@ -296,7 +297,14 @@ def get_next_unreviewed_for_user(username, current_filename=None):
         start_index = sorted_images.index(current_filename) + 1
 
     # Create search list (from start_index onwards, then wrap around)
+    # Exclude current_filename from the search to avoid returning the same image
     search_list = sorted_images[start_index:] + sorted_images[:start_index]
+    if current_filename:
+        search_list = [f for f in search_list if f != current_filename]
+
+    # Exclude images already in history to prevent cycling
+    if exclude_history:
+        search_list = [f for f in search_list if f not in exclude_history]
 
     # First check for user's own soft-locked unresolved images
     for filename in search_list:
@@ -534,8 +542,8 @@ def api_navigation(filename):
                     next_unreviewed_in_history = hist_filename
                     break
 
-    # Get next unreviewed image after current (priority order, skip others' locks)
-    next_unreviewed_priority = get_next_unreviewed_for_user(username, current_filename=filename)
+    # Get next unreviewed image after current (priority order, skip others' locks and history)
+    next_unreviewed_priority = get_next_unreviewed_for_user(username, current_filename=filename, exclude_history=history)
 
     # Determine next unreviewed target (prefer history, then priority)
     next_unreviewed = next_unreviewed_in_history or next_unreviewed_priority
@@ -1323,9 +1331,31 @@ def api_mo_create_new():
             field_slip_note = f"Field slip: {field_code}"
             obs_notes = f"{field_slip_note}\n\n{notes}" if notes else field_slip_note
 
+        # If location_id not provided, try to look it up from location text
+        location_text = img['review'].get('location') or img['source'].get('location')
+        final_location_id = location_id
+        final_location_name = None
+
+        if not final_location_id and location_text and all_locations:
+            # Try to find exact match in all_locations
+            location_text_lower = location_text.lower().strip()
+            for loc in all_locations:
+                if loc['name'].lower().strip() == location_text_lower:
+                    final_location_id = loc['id']
+                    sys.stderr.write(f"Phase 5: Found location match: '{location_text}' -> ID {final_location_id}\n")
+                    sys.stderr.flush()
+                    break
+
+        # If still no location_id, use text as place_name
+        if not final_location_id and location_text:
+            final_location_name = location_text
+            sys.stderr.write(f"Phase 5: No location match found, using place_name: '{location_text}'\n")
+            sys.stderr.flush()
+
         obs_result = client.create_observation(
             date=date,
-            location_id=location_id,
+            location_id=final_location_id,
+            location_name=final_location_name,
             name_id=name_id,
             notes=obs_notes,
             image_ids=[image_id]
