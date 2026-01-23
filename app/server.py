@@ -334,13 +334,19 @@ def get_next_unreviewed_for_user(username, current_filename=None, exclude_histor
 
 
 # Data loading functions
-def load_data(path):
+def load_data(path, images_directory=None):
     """Load review data from JSON file."""
     global review_data, data_file, images_dir, all_names, all_locations
     data_file = path
     with open(path) as f:
         review_data = json.load(f)
-    images_dir = Path(review_data['metadata'].get('images_dir', '../nemf-photos/scaled-25pct'))
+
+    # Use provided images_directory, or default to data/images relative to data file
+    if images_directory:
+        images_dir = Path(images_directory)
+    else:
+        # Default to 'images' subdirectory next to the data file
+        images_dir = Path(path).parent / 'images'
 
     # Load all names for autocomplete if available
     names_path = Path(path).parent / 'all_names.json'
@@ -1533,9 +1539,9 @@ def api_mo_create_new():
         return jsonify({'error': f'Unexpected error: {str(e)}'}), 500
 
 
-def create_app(data_path='review_data.json', users_path='users.json'):
+def create_app(data_path='review_data.json', users_path='users.json', images_directory=None):
     """Factory function to create and configure the app."""
-    load_data(data_path)
+    load_data(data_path, images_directory)
     load_users(users_path)
     return app
 
@@ -1548,6 +1554,8 @@ def main():
     parser.add_argument('--port', type=int, default=5001, help='Port to run on')
     parser.add_argument('--data', default='review_data.json', help='Review data file')
     parser.add_argument('--users', default='users.json', help='Users file')
+    parser.add_argument('--images', default=None,
+                        help='Images directory (default: data/images relative to data file)')
     parser.add_argument('--host', default='127.0.0.1', help='Host to bind to')
     parser.add_argument('--mo-url', default='https://mushroomobserver.org',
                         help='Mushroom Observer base URL (default: production)')
@@ -1562,7 +1570,8 @@ def main():
     print(f"MO API URL: {mo_base_url}")
 
     print(f"Loading data from {args.data}...")
-    load_data(args.data)
+    load_data(args.data, args.images)
+    print(f"Images directory: {images_dir}")
 
     users_path = Path(args.data).parent / args.users
     print(f"Loading users from {users_path}...")
