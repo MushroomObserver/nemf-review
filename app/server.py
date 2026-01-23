@@ -343,10 +343,10 @@ def load_data(path, images_directory=None):
 
     # Use provided images_directory, or default to data/images relative to data file
     if images_directory:
-        images_dir = Path(images_directory)
+        images_dir = Path(images_directory).resolve()
     else:
         # Default to 'images' subdirectory next to the data file
-        images_dir = Path(path).parent / 'images'
+        images_dir = (Path(path).parent / 'images').resolve()
 
     # Load all names for autocomplete if available
     names_path = Path(path).parent / 'all_names.json'
@@ -1107,6 +1107,13 @@ def api_adjacent(filename):
 @requires_auth
 def serve_image(filename):
     """Serve an image file."""
+    import sys
+    sys.stderr.write(f"DEBUG: serve_image called with filename: {filename}\n")
+    sys.stderr.write(f"DEBUG: images_dir = {images_dir}\n")
+    sys.stderr.write(f"DEBUG: images_dir type = {type(images_dir)}\n")
+    sys.stderr.write(f"DEBUG: images_dir exists = {images_dir.exists() if hasattr(images_dir, 'exists') else 'N/A'}\n")
+    sys.stderr.write(f"DEBUG: full path would be: {images_dir / filename if hasattr(images_dir, '__truediv__') else 'N/A'}\n")
+    sys.stderr.flush()
     return send_from_directory(images_dir, filename)
 
 
@@ -1290,6 +1297,16 @@ def api_mo_add_to_existing():
                 print(f"Field slip API error (may not be implemented): {e}")
                 field_slip_result = {'warning': f'Field slip API unavailable: {e}'}
 
+        # Step 5: Add observation to project
+        if project_id:
+            try:
+                sys.stderr.write(f"Phase 4: Adding observation {observation_id} to project {project_id}\n")
+                sys.stderr.flush()
+                client.add_observation_to_project(observation_id, project_id)
+            except MOAPIError as e:
+                sys.stderr.write(f"Phase 4: Warning - could not add to project: {e}\n")
+                sys.stderr.flush()
+
         # Release claim
         release_claim(filename, username)
         save_data()
@@ -1440,7 +1457,8 @@ def api_mo_create_new():
             location_name=final_location_name,
             name_id=name_id,
             notes=obs_notes,
-            image_ids=[image_id]
+            image_ids=[image_id],
+            project_ids=[project_id] if project_id else None
         )
 
         # Extract observation ID from response
@@ -1572,6 +1590,11 @@ def main():
     print(f"Loading data from {args.data}...")
     load_data(args.data, args.images)
     print(f"Images directory: {images_dir}")
+    print(f"Images directory type: {type(images_dir)}")
+    print(f"Images directory exists: {images_dir.exists()}")
+    print(f"Images directory is absolute: {images_dir.is_absolute()}")
+    if images_dir.is_symlink():
+        print(f"Images directory is symlink, resolves to: {images_dir.resolve()}")
 
     users_path = Path(args.data).parent / args.users
     print(f"Loading users from {users_path}...")

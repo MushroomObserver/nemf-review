@@ -263,6 +263,7 @@ class MOAPIClient:
         name_id: Optional[int] = None,
         notes: str = '',
         image_ids: Optional[List[int]] = None,
+        project_ids: Optional[List[int]] = None,
         **metadata
     ) -> Dict[str, Any]:
         """
@@ -275,6 +276,7 @@ class MOAPIClient:
             name_id: MO name ID
             notes: Observation notes
             image_ids: List of image IDs to attach
+            project_ids: List of project IDs to add observation to
             **metadata: Additional observation metadata
 
         Returns:
@@ -300,6 +302,9 @@ class MOAPIClient:
 
         if image_ids:
             data['images'] = ','.join(str(id) for id in image_ids)
+
+        if project_ids:
+            data['projects'] = ','.join(str(id) for id in project_ids)
 
         return self._request('POST', '/api2/observations', data=data, skip_auth=True)
 
@@ -477,6 +482,36 @@ class MOAPIClient:
             '/api2/field_slips',
             data=data,
             skip_auth=True  # API key is in form data
+        )
+
+    def add_observation_to_project(
+        self,
+        observation_id: int,
+        project_id: int
+    ) -> Dict[str, Any]:
+        """
+        Add an existing observation to a project.
+
+        Args:
+            observation_id: Observation ID to add
+            project_id: Project ID to add observation to
+
+        Returns:
+            Updated observation data
+
+        Raises:
+            MOAPIError: If operation fails
+        """
+        data = {
+            'api_key': self.api_key,
+            'id': observation_id,
+            'add_projects': str(project_id)
+        }
+        return self._request(
+            'PATCH',
+            '/api2/observations',
+            data=data,
+            skip_auth=True
         )
 
     def create_or_link_field_slip(
