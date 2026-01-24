@@ -1161,11 +1161,72 @@
             if (claim) {
                 if (claim.is_mine) {
                     claimStatus.innerHTML = '<span style="color: #4ecca3;">✓ You have this image</span>';
-                } else {
+                } else if (claim.claimed_by) {
                     claimStatus.innerHTML = `<span style="color: #ff6b6b;">⚠ Claimed by ${claim.claimed_by}</span>`;
+                } else {
+                    claimStatus.innerHTML = '';
                 }
             } else {
                 claimStatus.innerHTML = '';
+            }
+        }
+
+        function disableActionsIfClaimed(isClaimedByOther, claimedBy) {
+            // Get all action buttons and form fields
+            const actionButtons = [
+                document.getElementById('btnAlreadyOnMO'),
+                document.getElementById('btnPhase4'),
+                document.getElementById('btnPhase5'),
+                document.querySelector('[onclick*="linkImage"]'),
+                document.querySelector('[onclick*="submitReview"]')
+            ];
+
+            // Get form fields in REVIEW/CORRECTIONS section
+            const formFields = [
+                document.getElementById('reviewFieldCode'),
+                document.getElementById('reviewDate'),
+                document.getElementById('reviewDateCustom'),
+                document.getElementById('reviewLocation'),
+                document.getElementById('reviewLocationId'),
+                document.getElementById('reviewName'),
+                document.getElementById('reviewNameId'),
+                document.getElementById('reviewNotes')
+            ];
+
+            if (isClaimedByOther) {
+                // Disable actions and form fields
+                actionButtons.forEach(btn => {
+                    if (btn) {
+                        btn.disabled = true;
+                        btn.title = `This image is being reviewed by ${claimedBy}`;
+                        btn.style.opacity = '0.5';
+                        btn.style.cursor = 'not-allowed';
+                    }
+                });
+
+                formFields.forEach(field => {
+                    if (field) {
+                        field.disabled = true;
+                        field.title = `This image is being reviewed by ${claimedBy}`;
+                    }
+                });
+            } else {
+                // Enable actions and form fields
+                actionButtons.forEach(btn => {
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.title = '';
+                        btn.style.opacity = '1';
+                        btn.style.cursor = 'pointer';
+                    }
+                });
+
+                formFields.forEach(field => {
+                    if (field) {
+                        field.disabled = false;
+                        field.title = '';
+                    }
+                });
             }
         }
 
@@ -1217,11 +1278,12 @@
             document.getElementById('mainImage').src = `/images/${encodeURIComponent(filename)}`;
             document.getElementById('currentFilename').textContent = filename;
 
-            // Update claim status
+            // Update claim status and disable UI if claimed by someone else
             updateClaimStatus(data.claim);
-            if (data.claim && !data.claim.is_mine) {
-                showClaimConflict(data.claim.claimed_by, filename);
-            }
+
+            // Don't block viewing - only disable actions if someone else has claimed it
+            const claimedByOther = data.claim && data.claim.claimed_by && !data.claim.is_mine;
+            disableActionsIfClaimed(claimedByOther, data.claim.claimed_by);
 
             // Update position
             document.getElementById('positionInfo').textContent =
@@ -1603,7 +1665,7 @@
 
                 if (data.success) {
                     updateSummary(data.summary);
-                    nextUnreviewedImage();
+                    loadNextUnreviewedFresh();
                 } else if (response.status === 409) {
                     // Claim conflict - lost the claim to another user
                     handleClaimLoss(data.claimed_by);
@@ -1645,6 +1707,24 @@
                 await loadImage(navigationState.next_unreviewed, addToHistory);
             } else if (navigationState && navigationState.all_resolved) {
                 showCelebration();
+            }
+        }
+
+        async function loadNextUnreviewedFresh() {
+            // Get fresh next unreviewed image from API (not cached navigationState)
+            closePeek();
+
+            try {
+                const response = await fetch('/api/next-unreviewed');
+                const data = await response.json();
+
+                if (data.filename) {
+                    await loadImage(data.filename, true);
+                } else if (data.message) {
+                    showCelebration();
+                }
+            } catch (error) {
+                console.error('Failed to get next unreviewed image:', error);
             }
         }
 
@@ -2026,7 +2106,7 @@
                 if (data.success) {
                     closeAlreadyOnMOModal();
                     updateSummary(data.summary);
-                    nextUnreviewedImage();
+                    loadNextUnreviewedFresh();
                 } else if (response.status === 409) {
                     // Claim conflict - lost the claim to another user
                     closeAlreadyOnMOModal();
@@ -2327,7 +2407,7 @@
                         if (reviewResult && reviewResult.summary) {
                             updateSummary(reviewResult.summary);
                         }
-                        nextUnreviewedImage();
+                        loadNextUnreviewedFresh();
                     }, 1500);
                 } else {
                     statusEl.className = 'mo-status-error';
@@ -2417,7 +2497,7 @@
                         if (reviewResult && reviewResult.summary) {
                             updateSummary(reviewResult.summary);
                         }
-                        nextUnreviewedImage();
+                        loadNextUnreviewedFresh();
                     }, 1500);
                 } else {
                     statusEl.className = 'mo-status-error';

@@ -289,6 +289,7 @@ def get_next_unreviewed_for_user(username, current_filename=None, exclude_histor
     If current_filename is provided, starts searching after that image.
     If exclude_history is provided, skips images in that list.
     """
+    import sys
     sorted_images = get_sorted_images()
 
     # If current_filename provided, start searching after it
@@ -296,40 +297,49 @@ def get_next_unreviewed_for_user(username, current_filename=None, exclude_histor
     if current_filename and current_filename in sorted_images:
         start_index = sorted_images.index(current_filename) + 1
 
+    sys.stderr.write(f"DEBUG: get_next_unreviewed_for_user: current={current_filename}, start_index={start_index}\n")
+    sys.stderr.write(f"DEBUG: Total sorted images: {len(sorted_images)}\n")
+    if start_index < len(sorted_images):
+        sys.stderr.write(f"DEBUG: Image at start_index ({start_index}): {sorted_images[start_index]}\n")
+    sys.stderr.write(f"DEBUG: exclude_history: {len(exclude_history) if exclude_history else 0} images\n")
+    sys.stderr.flush()
+
     # Create search list (from start_index onwards, then wrap around)
     # Exclude current_filename from the search to avoid returning the same image
     search_list = sorted_images[start_index:] + sorted_images[:start_index]
     if current_filename:
         search_list = [f for f in search_list if f != current_filename]
 
+    sys.stderr.write(f"DEBUG: search_list length: {len(search_list)}, first 5: {search_list[:5]}\n")
+    sys.stderr.flush()
+
     # Exclude images already in history to prevent cycling
     if exclude_history:
         search_list = [f for f in search_list if f not in exclude_history]
+        sys.stderr.write(f"DEBUG: After excluding history: {len(search_list)} images remaining\n")
+        sys.stderr.flush()
 
-    # First check for user's own soft-locked unresolved images
+    # Look for unreviewed/unresolved images not locked by others
+    checked = 0
+    skipped_resolved = 0
     for filename in search_list:
         img = review_data['images'][filename]
         status = img['review'].get('status')
         mo_obs_id = img['review'].get('mo_observation_id')
-        resolved = status in ('already_on_mo', 'excluded') or mo_obs_id
-
-        if not resolved:
-            claim = get_claim(filename)
-            if claim and claim['user'] == username:
-                return filename
-
-    # Then look for unreviewed/unresolved images not locked by others
-    for filename in search_list:
-        img = review_data['images'][filename]
-        status = img['review'].get('status')
-        mo_obs_id = img['review'].get('mo_observation_id')
-        resolved = status in ('already_on_mo', 'excluded') or mo_obs_id
+        resolved = status in ('already_on_mo', 'excluded', 'approved', 'corrected') or mo_obs_id
 
         if not resolved:
             claim = get_claim(filename)
             if not claim or claim['user'] == username:
+                sys.stderr.write(f"DEBUG: Found next unreviewed: {filename} (checked {checked} images, skipped {skipped_resolved} resolved)\n")
+                sys.stderr.flush()
                 return filename
+        else:
+            skipped_resolved += 1
+        checked += 1
 
+    sys.stderr.write(f"DEBUG: No unreviewed images found (checked {checked} images)\n")
+    sys.stderr.flush()
     return None
 
 
@@ -484,19 +494,26 @@ def api_images():
 @app.route('/api/image/<path:filename>')
 @requires_auth
 def api_image(filename):
-    """Get full data for a specific image and claim it."""
+    """Get full data for a specific image and optionally claim it."""
     username = get_current_user()
 
     if filename not in review_data['images']:
         return jsonify({'error': 'Image not found'}), 404
 
-    # Try to claim the image
-    success, message, claimed_by = try_claim(filename, username)
-
     # Track view history only if requested (to avoid adding Back/Forward nav to history)
     add_to_history = request.args.get('add_to_history', 'false').lower() == 'true'
     if add_to_history:
         add_to_view_history(filename, username)
+
+    # Only claim the image if actually loading it for review (not peeking)
+    if add_to_history:
+        success, message, claimed_by = try_claim(filename, username)
+    else:
+        # Just check current claim status without claiming
+        claim = get_claim(filename)
+        success = True
+        message = ''
+        claimed_by = claim['user'] if claim else None
 
     img = review_data['images'][filename]
     nav = get_navigation_context(filename)
@@ -520,8 +537,14 @@ def api_image(filename):
 @requires_auth
 def api_navigation(filename):
     """Get navigation info for current image based on user's view history."""
+    import sys
     username = get_current_user()
     history = get_view_history(username)
+
+    sys.stderr.write(f"\n{'='*80}\n")
+    sys.stderr.write(f"DEBUG: /api/navigation called for {filename} by {username}\n")
+    sys.stderr.write(f"DEBUG: History length: {len(history)}, current in history: {filename in history}\n")
+    sys.stderr.flush()
 
     # Find current position in history
     current_index = history.index(filename) if filename in history else -1
@@ -543,13 +566,14 @@ def api_navigation(filename):
             if img:
                 status = img['review'].get('status')
                 mo_obs_id = img['review'].get('mo_observation_id')
-                resolved = status in ('already_on_mo', 'excluded') or mo_obs_id
+                resolved = status in ('already_on_mo', 'excluded', 'approved', 'corrected') or mo_obs_id
                 if not resolved:
                     next_unreviewed_in_history = hist_filename
                     break
 
-    # Get next unreviewed image after current (priority order, skip others' locks and history)
-    next_unreviewed_priority = get_next_unreviewed_for_user(username, current_filename=filename, exclude_history=history)
+    # Get next unreviewed image after current (priority order, skip others' locks)
+    # Don't exclude history - the resolved check already handles skipping reviewed images
+    next_unreviewed_priority = get_next_unreviewed_for_user(username, current_filename=filename)
 
     # Determine next unreviewed target (prefer history, then priority)
     next_unreviewed = next_unreviewed_in_history or next_unreviewed_priority
@@ -557,6 +581,11 @@ def api_navigation(filename):
 
     # Check if all resolved
     all_resolved = is_all_resolved()
+
+    sys.stderr.write(f"DEBUG: next_unreviewed_in_history: {next_unreviewed_in_history}\n")
+    sys.stderr.write(f"DEBUG: next_unreviewed_priority: {next_unreviewed_priority}\n")
+    sys.stderr.write(f"DEBUG: next_unreviewed (final): {next_unreviewed} (mode: {next_unreviewed_mode})\n")
+    sys.stderr.flush()
 
     return jsonify({
         'current_index': current_index,
@@ -644,8 +673,8 @@ def api_review_image(filename):
                 linked_links.append(filename)
                 linked_review['linked_images'] = linked_links
 
-    # Propagate approved/corrected data to all linked images
-    if review['status'] in ('approved', 'corrected') and linked_images:
+    # Propagate status to all linked images (for any resolved status)
+    if review['status'] in ('approved', 'corrected', 'already_on_mo', 'excluded') and linked_images:
         for linked_filename in linked_images:
             if linked_filename in review_data['images']:
                 propagate_review_data(filename, linked_filename, review, username)
@@ -684,7 +713,14 @@ def propagate_review_data(source_filename, target_filename, source_review, usern
     target_review['location_id'] = source_review.get('location_id')
     target_review['name'] = source_review.get('name')
     target_review['name_id'] = source_review.get('name_id')
-    target_review['status'] = 'approved'
+    target_review['mo_observation_id'] = source_review.get('mo_observation_id')
+    target_review['mo_id_type'] = source_review.get('mo_id_type')
+    target_review['mo_id_value'] = source_review.get('mo_id_value')
+    # Use source status if it's a final status, otherwise default to 'approved'
+    if source_review.get('status') in ('already_on_mo', 'excluded'):
+        target_review['status'] = source_review.get('status')
+    else:
+        target_review['status'] = 'approved'
     target_review['reviewed_at'] = datetime.now().isoformat()
     target_review['reviewer'] = f'{username}:propagated_from:{source_filename}'
 
@@ -797,8 +833,17 @@ def api_unlink_image(filename):
 @requires_auth
 def api_next_unreviewed():
     """Get the next unreviewed image for this user (skips others' locks)."""
+    import sys
     username = get_current_user()
+
+    sys.stderr.write(f"\n{'='*80}\n")
+    sys.stderr.write(f"DEBUG: /api/next-unreviewed called by {username}\n")
+    sys.stderr.flush()
+
     filename = get_next_unreviewed_for_user(username)
+
+    sys.stderr.write(f"DEBUG: get_next_unreviewed_for_user returned: {filename}\n")
+    sys.stderr.flush()
 
     if filename:
         return jsonify({'filename': filename})
