@@ -2,6 +2,12 @@
 
 A web-based tool for reviewing extracted field slip data from NEMF 2025 photos.
 
+## Documentation
+
+- **[User Guide](USER_GUIDE.md)** - Comprehensive guide for reviewers
+- **[Quick Reference](QUICK_REFERENCE.md)** - Cheat sheet for experienced users
+- **README** (this file) - Technical documentation for developers/admins
+
 ## Features
 
 - Multi-user support with HTTP Basic Auth
