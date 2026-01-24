@@ -911,11 +911,13 @@
 
             locationInput.addEventListener('blur', (e) => {
                 // Delay to allow click on dropdown item
-                setTimeout(() => {
+                setTimeout(async () => {
                     locationDropdown.classList.remove('active');
                     // Re-verify if value changed
                     if (locationInput.value !== originalValues.location) {
-                        verifyField('location', locationInput.value);
+                        await verifyField('location', locationInput.value);
+                        // Check if we should auto-fill date from foray location
+                        await checkAndFillForayDate(locationInput.value);
                     }
                 }, 200);
             });
@@ -1023,6 +1025,8 @@
                 updateFieldStatus('locationStatus', 'verified', '✓ Verified');
                 // Trigger auto-lock when selecting from autocomplete
                 onFieldInput('reviewLocation', 'lockLocation');
+                // Check if we should auto-fill date from foray location
+                checkAndFillForayDate(name);
             } else {
                 document.getElementById('reviewName').value = name;
                 document.getElementById('reviewNameId').value = id;
@@ -1083,6 +1087,22 @@
             const el = document.getElementById(elementId);
             el.className = 'field-status ' + className;
             el.textContent = text;
+        }
+
+        async function checkAndFillForayDate(locationValue) {
+            // Only auto-fill if date is empty and location has a value
+            const dateInput = document.getElementById('reviewDate');
+            if (!dateInput.value && locationValue) {
+                try {
+                    const response = await fetch(`/api/lookup/foray_date?location=${encodeURIComponent(locationValue)}`);
+                    const data = await response.json();
+                    if (data.date) {
+                        dateInput.value = data.date;
+                    }
+                } catch (error) {
+                    console.error('Error looking up foray date:', error);
+                }
+            }
         }
 
         async function verifyFromLinkedImages(linkedImageFilenames) {
@@ -1443,6 +1463,11 @@
                 updateFieldStatus('nameStatus', nameId ? 'verified' : '', nameId ? '✓ Verified' : '');
             }
 
+            // Check if we should auto-fill date from foray location
+            if (locationValue) {
+                await checkAndFillForayDate(locationValue);
+            }
+
             // Store original values for change detection
             originalValues.location = document.getElementById('reviewLocation').value;
             originalValues.name = document.getElementById('reviewName').value;
@@ -1670,6 +1695,11 @@
                     // No ID but has value - try to auto-verify
                     await verifyField('location', copiedLocationValue);
                 }
+            }
+
+            // Check if we should auto-fill date from foray location
+            if (copiedLocationValue) {
+                await checkAndFillForayDate(copiedLocationValue);
             }
 
             const copiedNameId = document.getElementById('reviewNameId').value;
@@ -2869,6 +2899,11 @@
                 } else {
                     await verifyField('location', copiedLocationValue);
                 }
+            }
+
+            // Check if we should auto-fill date from foray location
+            if (copiedLocationValue) {
+                await checkAndFillForayDate(copiedLocationValue);
             }
 
             const copiedNameId = document.getElementById('reviewNameId').value;

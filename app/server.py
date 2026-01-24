@@ -3,6 +3,7 @@
 NEMF Photo Review Server - Multi-user version with authentication and locking.
 """
 
+import csv
 import json
 import os
 import sys
@@ -27,6 +28,7 @@ data_file = None
 images_dir = None
 all_names = None
 all_locations = None
+foray_dates = None  # {location_name: date_string}
 mo_base_url = 'https://mushroomobserver.org'  # MO API base URL (configurable)
 
 # Locking state
@@ -346,7 +348,7 @@ def get_next_unreviewed_for_user(username, current_filename=None, exclude_histor
 # Data loading functions
 def load_data(path, images_directory=None):
     """Load review data from JSON file."""
-    global review_data, data_file, images_dir, all_names, all_locations
+    global review_data, data_file, images_dir, all_names, all_locations, foray_dates
     data_file = path
     with open(path) as f:
         review_data = json.load(f)
@@ -377,6 +379,25 @@ def load_data(path, images_directory=None):
     else:
         all_locations = None
         print("No all_locations.json found - using limited location lookup")
+
+    # Load foray dates from CSV if available
+    forays_path = Path(path).parent / 'forays.csv'
+    if forays_path.exists():
+        foray_dates = {}
+        with open(forays_path, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                location = row['Site Name'].strip()
+                date_str = row['Date'].strip()
+                # Convert "9/18" format to "2024-09-18" (NEMF 2024 dates)
+                if '/' in date_str:
+                    month, day = date_str.split('/')
+                    full_date = f"2024-{int(month):02d}-{int(day):02d}"
+                    foray_dates[location] = full_date
+        print(f"Loaded {len(foray_dates)} foray dates")
+    else:
+        foray_dates = None
+        print("No forays.csv found - date auto-fill disabled")
 
     return review_data
 
@@ -936,6 +957,27 @@ def api_lookup_name():
                         })
 
     return jsonify(results[:10])
+
+
+@app.route('/api/lookup/foray_date')
+@requires_auth
+def api_lookup_foray_date():
+    """Look up foray date by location name."""
+    location = request.args.get('location', '')
+    if not location or not foray_dates:
+        return jsonify({'date': None})
+
+    # Try exact match first
+    if location in foray_dates:
+        return jsonify({'date': foray_dates[location]})
+
+    # Try case-insensitive match
+    location_lower = location.lower()
+    for foray_loc, date in foray_dates.items():
+        if foray_loc.lower() == location_lower:
+            return jsonify({'date': date})
+
+    return jsonify({'date': None})
 
 
 @app.route('/api/lookup/existing_observations')
