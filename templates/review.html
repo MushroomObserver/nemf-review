@@ -1045,18 +1045,20 @@
             const endpoint = type === 'location' ? '/api/lookup/location' : '/api/lookup/name';
             const results = await fetch(`${endpoint}?q=${encodeURIComponent(value)}`).then(r => r.json());
 
-            // Look for exact match
+            // Look for exact match (by name, regardless of match type)
             const exactMatch = results.find(r => {
                 const matchName = type === 'location' ? r.name : r.text_name;
-                return matchName.toLowerCase() === value.toLowerCase() && r.match === 'exact';
+                return matchName.toLowerCase() === value.toLowerCase();
             });
 
             if (exactMatch) {
                 const displayName = type === 'location' ? exactMatch.name : exactMatch.text_name;
                 if (type === 'location') {
                     document.getElementById('reviewLocationId').value = exactMatch.id;
+                    document.getElementById('lockLocation').checked = true;
                 } else {
                     document.getElementById('reviewNameId').value = exactMatch.id;
+                    document.getElementById('lockName').checked = true;
                 }
                 updateFieldStatus(statusId, 'verified', '✓ Verified');
             } else if (results.length > 0) {
@@ -1081,6 +1083,75 @@
             const el = document.getElementById(elementId);
             el.className = 'field-status ' + className;
             el.textContent = text;
+        }
+
+        async function verifyFromLinkedImages(linkedImageFilenames) {
+            if (!linkedImageFilenames || linkedImageFilenames.length === 0) {
+                return;
+            }
+
+            const currentLocationId = document.getElementById('reviewLocationId').value;
+            const currentNameId = document.getElementById('reviewNameId').value;
+
+            // Only auto-verify if current image doesn't already have verified IDs
+            const needLocation = !currentLocationId;
+            const needName = !currentNameId;
+
+            if (!needLocation && !needName) {
+                return; // Already have both IDs
+            }
+
+            // Check each linked image for verified data
+            for (const filename of linkedImageFilenames) {
+                try {
+                    // Fetch linked image data (without claiming or adding to history)
+                    const response = await fetch(`/api/image/${encodeURIComponent(filename)}`);
+                    const linkedData = await response.json();
+
+                    if (linkedData.error) continue;
+
+                    const linkedRev = linkedData.review;
+                    const linkedSrc = linkedData.source;
+
+                    // Check if linked image has verified location
+                    if (needLocation) {
+                        const linkedLocationId = linkedRev.location_id || linkedSrc.location_id;
+                        const linkedLocation = linkedRev.location || linkedSrc.location;
+                        if (linkedLocationId && linkedLocation) {
+                            // Use linked image's verified location
+                            document.getElementById('reviewLocation').value = linkedLocation;
+                            document.getElementById('reviewLocationId').value = linkedLocationId;
+                            document.getElementById('lockLocation').checked = true;
+                            updateFieldStatus('locationStatus', 'verified', '✓ Verified (from linked)');
+                        }
+                    }
+
+                    // Check if linked image has verified name
+                    if (needName) {
+                        const linkedNameId = linkedRev.name_id || linkedSrc.name_id;
+                        const linkedName = linkedRev.name || linkedSrc.name;
+                        if (linkedNameId && linkedName) {
+                            // Use linked image's verified name
+                            document.getElementById('reviewName').value = linkedName;
+                            document.getElementById('reviewNameId').value = linkedNameId;
+                            document.getElementById('lockName').checked = true;
+                            updateFieldStatus('nameStatus', 'verified', '✓ Verified (from linked)');
+                        }
+                    }
+
+                    // Update original values for change detection
+                    originalValues.location = document.getElementById('reviewLocation').value;
+                    originalValues.name = document.getElementById('reviewName').value;
+
+                    // If we found both, no need to check more linked images
+                    if (document.getElementById('reviewLocationId').value &&
+                        document.getElementById('reviewNameId').value) {
+                        break;
+                    }
+                } catch (error) {
+                    console.error('Error fetching linked image data:', error);
+                }
+            }
         }
 
         function updateReviewFieldSlipLink() {
@@ -1350,11 +1421,27 @@
             document.getElementById('lockName').checked = fieldLocks.name || false;
             document.getElementById('lockNotes').checked = fieldLocks.notes || false;
 
-            // Update field verification status based on whether we have IDs
-            const locationId = rev.location_id || src.location_id;
-            const nameId = rev.name_id || src.name_id;
-            updateFieldStatus('locationStatus', locationId ? 'verified' : '', locationId ? '✓ Verified' : '');
-            updateFieldStatus('nameStatus', nameId ? 'verified' : '', nameId ? '✓ Verified' : '');
+            // Auto-verify location and name if they have values but no IDs
+            const locationValue = document.getElementById('reviewLocation').value;
+            const locationId = document.getElementById('reviewLocationId').value;
+            const nameValue = document.getElementById('reviewName').value;
+            const nameId = document.getElementById('reviewNameId').value;
+
+            if (locationValue && !locationId) {
+                // Has location text but no ID - try to auto-verify
+                verifyField('location', locationValue);
+            } else {
+                // Update field verification status based on whether we have ID
+                updateFieldStatus('locationStatus', locationId ? 'verified' : '', locationId ? '✓ Verified' : '');
+            }
+
+            if (nameValue && !nameId) {
+                // Has name text but no ID - try to auto-verify
+                verifyField('name', nameValue);
+            } else {
+                // Update field verification status based on whether we have ID
+                updateFieldStatus('nameStatus', nameId ? 'verified' : '', nameId ? '✓ Verified' : '');
+            }
 
             // Store original values for change detection
             originalValues.location = document.getElementById('reviewLocation').value;
@@ -1366,6 +1453,8 @@
             if (rev.linked_images && rev.linked_images.length > 0) {
                 linkedField.style.display = 'block';
                 renderLinkedImages(rev.linked_images);
+                // Auto-verify from linked images if current image has no IDs
+                await verifyFromLinkedImages(rev.linked_images);
             } else {
                 linkedField.style.display = 'none';
             }
@@ -1566,6 +1655,35 @@
             if ((src.name || rev.name) && !document.getElementById('lockName').checked) {
                 document.getElementById('reviewName').value = rev.name || src.name;
                 document.getElementById('reviewNameId').value = rev.name_id || src.name_id || '';
+            }
+
+            // Verify and lock fields that were copied from linked image
+            const copiedLocationId = document.getElementById('reviewLocationId').value;
+            const copiedLocationValue = document.getElementById('reviewLocation').value;
+
+            if (copiedLocationValue && !document.getElementById('lockLocation').checked) {
+                if (copiedLocationId) {
+                    // Has ID from linked image - mark as verified and lock
+                    updateFieldStatus('locationStatus', 'verified', '✓ Verified (from linked)');
+                    document.getElementById('lockLocation').checked = true;
+                } else {
+                    // No ID but has value - try to auto-verify
+                    await verifyField('location', copiedLocationValue);
+                }
+            }
+
+            const copiedNameId = document.getElementById('reviewNameId').value;
+            const copiedNameValue = document.getElementById('reviewName').value;
+
+            if (copiedNameValue && !document.getElementById('lockName').checked) {
+                if (copiedNameId) {
+                    // Has ID from linked image - mark as verified and lock
+                    updateFieldStatus('nameStatus', 'verified', '✓ Verified (from linked)');
+                    document.getElementById('lockName').checked = true;
+                } else {
+                    // No ID but has value - try to auto-verify
+                    await verifyField('name', copiedNameValue);
+                }
             }
 
             // Track linked image
@@ -2738,6 +2856,31 @@
             if ((src.name || rev.name) && !document.getElementById('lockName').checked) {
                 document.getElementById('reviewName').value = rev.name || src.name;
                 document.getElementById('reviewNameId').value = rev.name_id || src.name_id || '';
+            }
+
+            // Verify and lock fields that were copied from linked image
+            const copiedLocationId = document.getElementById('reviewLocationId').value;
+            const copiedLocationValue = document.getElementById('reviewLocation').value;
+
+            if (copiedLocationValue && !document.getElementById('lockLocation').checked) {
+                if (copiedLocationId) {
+                    updateFieldStatus('locationStatus', 'verified', '✓ Verified (from linked)');
+                    document.getElementById('lockLocation').checked = true;
+                } else {
+                    await verifyField('location', copiedLocationValue);
+                }
+            }
+
+            const copiedNameId = document.getElementById('reviewNameId').value;
+            const copiedNameValue = document.getElementById('reviewName').value;
+
+            if (copiedNameValue && !document.getElementById('lockName').checked) {
+                if (copiedNameId) {
+                    updateFieldStatus('nameStatus', 'verified', '✓ Verified (from linked)');
+                    document.getElementById('lockName').checked = true;
+                } else {
+                    await verifyField('name', copiedNameValue);
+                }
             }
 
             let linkedImages = currentImage.review.linked_images || [];
