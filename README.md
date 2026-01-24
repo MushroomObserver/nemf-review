@@ -16,23 +16,6 @@ A web-based tool for reviewing extracted field slip data from NEMF 2025 photos.
 - Link related images (e.g., closeups to main shots)
 - Mark images as "Already on MO" with ID verification
 - Integration with MO field slip pages
-- Keyboard-driven workflow
-
-## Keyboard Shortcuts
-
-| Key | Action |
-|-----|--------|
-| `a` / `Enter` | Approve image |
-| `m` | Mark as "Already on MO" |
-| `d` | Discard image |
-| `s` / `→` / `n` | Next image |
-| `←` / `p` | Previous image |
-| `j` | Jump to specific image |
-| `f` | Focus field code input |
-| `1-5` | Select NEMF date (Wed-Sun) |
-| `z` | Zoom image |
-| `?` | Show shortcuts |
-| `Esc` | Close modal |
 
 ## Local Development
 

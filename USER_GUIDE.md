@@ -1,5 +1,7 @@
 # NEMF Review Tool - User Guide
 
+Note: This document was initially generated using Claude Code and may be inaccurate. Overall I believe it will helpful. I have read through it briefly and fixed a few obvious inaccuracies, but I expect there are more issues. Let me know if you run into anything that does work as documented or if there other issues you encounter with this document. -Natha
+
 ## Table of Contents
 
 - [Introduction](#introduction)
@@ -11,7 +13,6 @@
 - [Linking Images](#linking-images)
 - [Upload Workflows](#upload-workflows)
 - [Navigation](#navigation)
-- [Keyboard Shortcuts](#keyboard-shortcuts)
 - [Tips and Best Practices](#tips-and-best-practices)
 - [Troubleshooting](#troubleshooting)
 
@@ -19,19 +20,31 @@
 
 ## Introduction
 
-The NEMF Review Tool is a web-based application for reviewing and uploading field slip photos from the NEMF 2025 foray to Mushroom Observer. The tool helps multiple reviewers efficiently process hundreds of photos by:
+The NEMF Review Tool is a web-based application for reviewing and uploading large sets of photos from the NEMF 2025 foray to Mushroom Observer. Most images are expected to include images of an MO Field Slip. The tool focuses on four key pieces of information:
+- Field Slip Code
+- Collection Location
+- Collection Date
+- Initial ID
 
-- Extracting field slip data from photos using OCR
+Much of this data has already been automatically extracted, but all the data needs to be reviewed.
+
+The tool helps multiple reviewers efficiently process hundreds of photos by:
+
 - Allowing reviewers to correct and validate the extracted data
 - Preventing conflicts when multiple reviewers work simultaneously
 - Uploading observations and images to Mushroom Observer
 - Tracking progress and review status
 
+
 ## Getting Started
+
+### Getting Credentials
+
+Post a message in the #nemf MO Slack channel requesting an account.  One of the admins will help you get your credentials registered on the server.
 
 ### Logging In
 
-1. Navigate to the review tool URL in your web browser
+1. Go to http://142.93.176.28/.  Note this site is not "secure" according to most web browsers.  It is only expected to be available until January 31, 2026 and there really aren't any serious security concerns. However, it is strongly recommended that you use a randomly generated password that you do not use for any other purpose. One of the admins can help you with this.
 2. Enter your username and password (HTTP Basic Auth)
 3. You'll be taken to the main review interface
 
@@ -40,7 +53,7 @@ The NEMF Review Tool is a web-based application for reviewing and uploading fiel
 When you first log in, you'll see:
 - The first unreviewed image at the top
 - Extracted field slip data in the "EXTRACTED DATA" panel
-- Empty fields in the "REVIEW / CORRECTIONS" panel for you to fill in
+- Edit fields in the "REVIEW / CORRECTIONS" panel that should initially have the extracted field slip data
 - Summary statistics showing review progress
 
 ## Understanding the Interface
@@ -49,9 +62,10 @@ When you first log in, you'll see:
 
 **Image Display Area**
 - Large image preview at the top
-- Click image or press `z` to zoom/view full size
+- Click image zoom/view full size
 - Adjacent image strip below showing linked or nearby images
 - Click adjacent images to preview (peek) without claiming them
+- Image strip is scrollable
 
 **Summary Panel** (top right)
 - Total images in the review set
@@ -206,7 +220,7 @@ Often multiple photos are taken of the same specimen (overview, closeup, gills, 
 ### How to Link
 
 1. Review the main image and fill in data
-2. Click "Link Adjacent Image" or press `l`
+2. Click "Link Adjacent Image"
 3. Select the image(s) to link from the peek strip
 4. Linked images show with a green border and "LINKED" badge
 5. When you submit or upload, all linked images are included
@@ -238,7 +252,7 @@ If you linked the wrong image:
 Use this when the image has already been uploaded to Mushroom Observer:
 
 1. Fill in the Field Code (required)
-2. Click "Already on MO" or press `m`
+2. Click "Already on MO"
 3. Enter the MO Observation ID or Image ID
 4. Tool verifies the ID exists on MO
 5. Image is marked as `already_on_mo` and you advance to next unreviewed
@@ -247,7 +261,7 @@ Use this when the image has already been uploaded to Mushroom Observer:
 - **Observation ID**: Full observation number (e.g., 624466)
 - **Image ID**: Just the image number (if you know it)
 
-### Phase 4: Add to Existing Observation
+### Add to Existing Observation
 
 Use this when you want to add this image to an existing observation on MO:
 
@@ -261,12 +275,7 @@ Use this when you want to add this image to an existing observation on MO:
 8. Shows success status with links to view on MO
 9. Automatically advances to next unreviewed image
 
-**When to use Phase 4**
-- You know the observation already exists on MO
-- Multiple images from the same specimen are being uploaded separately
-- You're adding supplementary photos to a previous observation
-
-### Phase 5: Create New Observation
+### Create New Observation
 
 Use this to create a brand new observation on MO with this image:
 
@@ -280,16 +289,11 @@ Use this to create a brand new observation on MO with this image:
 8. Shows success status with links to view on MO
 9. Automatically advances to next unreviewed image
 
-**When to use Phase 5**
-- This is the first image of this specimen being uploaded
-- You want to create a fresh observation
-- You have multiple photos of the same specimen (link them first)
-
 ### Exclude
 
 Use this to mark an image as not suitable for upload:
 
-1. Click "Exclude" or press `d`
+1. Click "Exclude"
 2. Image is marked as `excluded`
 3. You advance to next unreviewed image
 
@@ -306,21 +310,21 @@ Use this to mark an image as not suitable for upload:
 The tool provides several ways to navigate:
 
 **Next Unreviewed** (Primary)
-- Press `s`, `n`, `→`, or click "Next Unreviewed"
+- Click "Next Unreviewed"
 - Jumps to the highest-priority unreviewed image
 - Skips images that are resolved or claimed by others
 - This is your main navigation method during review
 
 **Back/Forward** (History)
-- Press `p`, `←` or click "Back" to go to previous image in your viewing history
-- Press `n`, `→` or click "Forward" to go forward in your history
+- Click "Back" to go to previous image in your viewing history
+- Click "Forward" to go forward in your history
 - Does NOT claim images (view-only unless unclaimed)
 - Useful for double-checking previous work
 
 **Jump to Image**
-- Press `j` or click "Jump to Image"
-- Enter a position number (1-N)
-- Goes directly to that position in the sorted list
+- Click "Jump"
+- Enter image name
+- Goes directly to that image
 - Does NOT claim the image
 
 **Peek** (Adjacent Images)
@@ -331,46 +335,19 @@ The tool provides several ways to navigate:
 
 ### After Upload
 
-After successfully uploading (Phase 4 or Phase 5), the tool automatically:
+After successfully uploading an image, the tool automatically:
 1. Marks the image and all linked images as resolved
 2. Fetches the next unreviewed image from the API (fresh data)
 3. Loads that image for review
 4. You continue with the next highest-priority image
 
-## Keyboard Shortcuts
-
-Keyboard shortcuts speed up the review process:
-
-| Key | Action |
-|-----|--------|
-| `Enter` / `a` | Approve image (submit review) |
-| `m` | Mark as "Already on MO" |
-| `d` | Exclude image |
-| `s` / `n` / `→` | Next unreviewed image |
-| `p` / `←` | Previous image (history) |
-| `j` | Jump to specific image |
-| `f` | Focus field code input |
-| `l` | Link adjacent image |
-| `1-5` | Select NEMF date (Wed-Sun) |
-| `z` | Zoom image (toggle) |
-| `?` | Show keyboard shortcuts help |
-| `Esc` | Close modal / cancel |
-
-**Tips**
-- Shortcuts work when not typing in a text field
-- Press `f` to quickly jump to field code entry
-- Number keys `1-5` auto-fill the NEMF 2025 dates
-- `Esc` always closes the current modal
-
 ## Tips and Best Practices
 
 ### Efficient Reviewing
 
-1. **Use keyboard shortcuts** - Much faster than clicking
-2. **Fill field code first** - Press `f` to jump to it, then Tab through other fields
-3. **Use autocomplete** - Start typing and select from dropdown
-4. **Link before uploading** - Find all related images, link them, then upload once
-5. **Let the tool navigate** - After upload, it automatically shows next unreviewed
+1. **Use autocomplete** - Start typing and select from dropdown
+2. **Link before uploading** - Find all related images, link them, then upload once
+3. **Let the tool navigate** - After upload, it automatically shows next unreviewed
 
 ### Data Quality
 
@@ -392,21 +369,21 @@ Keyboard shortcuts speed up the review process:
 **Simple single image**
 1. Load image
 2. Fill in data
-3. Phase 5: Create new observation
+3. Create new observation
 4. Next
 
 **Multiple photos of same specimen**
 1. Load first image
 2. Fill in data
 3. Link related images
-4. Phase 5: Create new observation with all images
+4. Create new observation with all images
 5. Next
 
 **Adding to existing observation**
 1. Load image
 2. Fill in data
 3. Look up observation ID on MO
-4. Phase 4: Add to existing observation
+4. Add to existing observation
 5. Next
 
 **Already uploaded**
@@ -447,14 +424,14 @@ Keyboard shortcuts speed up the review process:
 
 ### Upload Failed
 
-**Symptom**: Error message during Phase 4/5 upload
+**Symptom**: Error message during image upload
 
 **Common Causes**:
 - Missing required fields
-- Invalid MO observation ID (Phase 4)
+- Invalid MO observation ID
 - Network timeout
 - MO API authentication failure
-- Observation doesn't exist (Phase 4)
+- Observation doesn't exist
 
 **Solution**:
 - Verify all required fields are filled
