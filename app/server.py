@@ -934,8 +934,6 @@ def api_lookup_name():
                     'author': name.get('author', ''),
                     'match': 'exact'
                 })
-                if len(results) >= 10:
-                    break
     else:
         lookup = review_data['reference'].get('name_lookup', {})
         for name_str, info in lookup.items():
@@ -955,6 +953,17 @@ def api_lookup_name():
                             'author': c.get('author', ''),
                             'match': 'candidate'
                         })
+
+    # Sort results to prioritize higher-level taxa (genus) before species
+    # Count words in text_name: 1 word = genus, 2 = species, 3+ = subspecies
+    def sort_key(item):
+        text_name = item['text_name']
+        word_count = len(text_name.split())
+        # Sort by (word_count, alphabetically)
+        # This puts genus (1 word) first, then species (2 words), etc.
+        return (word_count, text_name.lower())
+
+    results.sort(key=sort_key)
 
     return jsonify(results[:10])
 

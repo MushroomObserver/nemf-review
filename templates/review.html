@@ -303,6 +303,7 @@
         .btn-already-on-mo { background: #74b9ff; color: #000; }
         .btn-mo-phase4 { background: #a29bfe; color: #000; }
         .btn-mo-phase5 { background: #fd79a8; color: #000; }
+        .btn-search-mo { background: #00b894; color: #fff; }
         .mo-status-success { background: #4ecca3; color: #000; }
         .mo-status-error { background: #ff6b6b; color: #fff; }
         .mo-status-loading { background: #feca57; color: #000; }
@@ -573,7 +574,7 @@
                 <span style="margin-left: 20px;">User: <span class="count" id="currentUser">-</span></span>
             </div>
             <div style="display: flex; gap: 15px; font-size: 12px;">
-                <a href="https://mushroomobserver.org/checklist?project_id=389" target="_blank" style="color: #74b9ff;">Project Checklist</a>
+                <a id="projectChecklistLink" href="#" target="_blank" style="color: #74b9ff;">Project Checklist</a>
                 <a href="#" onclick="showSettings(); return false;" style="color: #74b9ff;">Settings</a>
             </div>
         </header>
@@ -663,6 +664,9 @@
                 <div id="reviewExistingObsContainer" style="display: none; margin-top: 10px;">
                     <label style="font-size: 11px; color: #888; text-transform: uppercase;">Existing MO Observation</label>
                     <div class="existing-obs" id="reviewExistingObs"></div>
+                </div>
+                <div style="margin-top: 15px;">
+                    <button class="btn-search-mo" onclick="searchMO()" style="width: 100%;">🔍 Search MO</button>
                 </div>
                     </div>
                 </div>
@@ -795,7 +799,7 @@
                 <label>MO API Key</label>
                 <input type="text" id="settingsApiKey" placeholder="Your MO API key...">
                 <p style="font-size: 11px; color: #888; margin-top: 5px;">
-                    Get your API key from <a href="https://mushroomobserver.org/account/api_keys" target="_blank" style="color: #74b9ff;">MO Account Settings</a>
+                    Get your API key from <a id="apiKeyLink" href="#" target="_blank" style="color: #74b9ff;">MO Account Settings</a>
                 </p>
             </div>
             <div class="field" style="margin-top: 15px;">
@@ -1089,6 +1093,35 @@
             el.textContent = text;
         }
 
+        function searchMO() {
+            const nameId = document.getElementById('reviewNameId').value;
+            const locationId = document.getElementById('reviewLocationId').value;
+
+            if (!nameId) {
+                alert('Please select a valid name from the autocomplete before searching.');
+                return;
+            }
+
+            // Build MO search URL for NEMF 2025 project (ID 389)
+            const params = new URLSearchParams({
+                'q[model]': 'Observation',
+                'q[names][include_subtaxa]': 'true',
+                'q[names][include_synonyms]': 'false',
+                'q[projects][]': '389'
+            });
+
+            // Add name lookup parameter
+            params.append('q[names][lookup][]', nameId);
+
+            // Add location if available
+            if (locationId) {
+                params.append('q[within_locations][]', locationId);
+            }
+
+            const url = `${MO_BASE_URL}/observations?${params.toString()}`;
+            window.open(url, '_blank');
+        }
+
         async function checkAndFillForayDate(locationValue) {
             // Only auto-fill if date is empty and location has a value
             const dateInput = document.getElementById('reviewDate');
@@ -1213,6 +1246,10 @@
 
         // Initialize
         async function init() {
+            // Set MO links using MO_BASE_URL
+            document.getElementById('projectChecklistLink').href = `${MO_BASE_URL}/checklist?project_id=389`;
+            document.getElementById('apiKeyLink').href = `${MO_BASE_URL}/account/api_keys`;
+
             // Get current user
             const whoami = await fetch('/api/whoami').then(r => r.json());
             currentUser = whoami.username;
