@@ -684,7 +684,12 @@
                     <!-- Action buttons -->
                     <div style="display: flex; gap: 10px;">
                         <button class="btn-already-on-mo" onclick="openAlreadyOnMOModal()" style="flex: 1;">Already on MO</button>
-                        <button class="btn-exclude" onclick="submitReview('excluded')" style="flex: 1;">Exclude</button>
+                        <button class="btn-exclude" onclick="confirmExclude()" style="flex: 1;">Exclude</button>
+                    </div>
+
+                    <!-- Reset button -->
+                    <div style="margin-top: 10px;">
+                        <button class="btn-skip" onclick="resetReview()" style="width: 100%; font-size: 12px;">Reset to Unreviewed</button>
                     </div>
 
                     <!-- Upload to MO section -->
@@ -864,6 +869,26 @@
             <div style="display: flex; gap: 10px; margin-top: 20px;">
                 <button class="btn-mo-phase4" onclick="uploadPhase4()">Upload</button>
                 <button class="btn-skip" onclick="closePhase4Modal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Exclude confirmation modal -->
+    <div class="modal" id="excludeModal">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <h2>Exclude Images</h2>
+            <p style="font-size: 13px; color: #888;">
+                This image has <span id="excludeLinkedCount"></span> linked image(s).
+            </p>
+            <div id="excludeLinkedList" style="max-height: 150px; overflow-y: auto; background: #1e1e1e; padding: 10px; border-radius: 4px; margin: 10px 0; font-size: 12px;">
+            </div>
+            <p style="font-size: 13px; margin-top: 15px;">
+                Do you want to exclude only the current image, or all linked images as well?
+            </p>
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button class="btn-exclude" onclick="excludeCurrentOnly()" style="flex: 1;">Current Only</button>
+                <button class="btn-exclude" onclick="excludeAllLinked()" style="flex: 1;">All Linked</button>
+                <button class="btn-skip" onclick="closeExcludeModal()">Cancel</button>
             </div>
         </div>
     </div>
@@ -2023,6 +2048,7 @@
                 closePeek();
                 closeAlreadyOnMOModal();
                 closePhase4Modal();
+                closeExcludeModal();
                 closeSettings();
                 closeClaimConflict();
 
@@ -2381,6 +2407,99 @@
 
         function closePhase4Modal() {
             document.getElementById('phase4Modal').classList.remove('active');
+        }
+
+        function confirmExclude() {
+            if (!currentImage) return;
+
+            const linkedImages = currentImage.review.linked_images || [];
+
+            if (linkedImages.length === 0) {
+                // No linked images - proceed with normal exclude
+                submitReview('excluded');
+                return;
+            }
+
+            // Show modal asking what to exclude
+            const modal = document.getElementById('excludeModal');
+            document.getElementById('excludeLinkedCount').textContent = linkedImages.length;
+
+            const listDiv = document.getElementById('excludeLinkedList');
+            listDiv.innerHTML = linkedImages.map(fn => `<div>• ${fn}</div>`).join('');
+
+            modal.classList.add('active');
+        }
+
+        function closeExcludeModal() {
+            document.getElementById('excludeModal').classList.remove('active');
+        }
+
+        async function excludeCurrentOnly() {
+            if (!currentImage) return;
+
+            const linkedImages = currentImage.review.linked_images || [];
+            if (linkedImages.length === 0) {
+                closeExcludeModal();
+                submitReview('excluded');
+                return;
+            }
+
+            // Unlink all linked images
+            for (const targetFilename of linkedImages) {
+                try {
+                    await fetch(`/api/unlink/${encodeURIComponent(currentImage.filename)}`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ target: targetFilename })
+                    });
+                } catch (error) {
+                    console.error('Failed to unlink:', error);
+                }
+            }
+
+            // Update local state
+            currentImage.review.linked_images = [];
+
+            closeExcludeModal();
+
+            // Now exclude only the current image
+            submitReview('excluded');
+        }
+
+        async function excludeAllLinked() {
+            closeExcludeModal();
+            // Use normal submit which includes linked_images
+            submitReview('excluded');
+        }
+
+        async function resetReview() {
+            if (!currentImage) return;
+
+            if (!confirm(`Reset ${currentImage.filename} to unreviewed?\n\nThis will clear the review status and make it available for review again.`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/image/${encodeURIComponent(currentImage.filename)}/reset`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'}
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    // Reload the current image to reflect the reset state
+                    await loadImage(currentImage.filename, false);
+                    alert('Review reset successfully. Image is now unreviewed.');
+                } else if (response.status === 409) {
+                    handleClaimLoss(data.claimed_by);
+                    alert(`Cannot reset: This image is now being reviewed by ${data.claimed_by}.`);
+                } else {
+                    alert('Failed to reset: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Failed to reset: ' + error.message);
+            }
         }
 
         async function resolveFieldSlipToObservation(fieldSlipCode) {

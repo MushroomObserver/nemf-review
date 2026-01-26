@@ -544,6 +544,12 @@ def auto_link_by_field_code(filename, username):
     current_review = current_img['review']
     current_source = current_img['source']
 
+    # Don't auto-link excluded images
+    if current_review.get('status') == 'excluded':
+        sys.stderr.write(f"Current image is excluded, skipping auto-link\n")
+        sys.stderr.flush()
+        return
+
     # Get current image's field code (prefer review over source)
     current_field_code = current_review.get('field_code') or current_source.get('field_code')
     sys.stderr.write(f"Current field code: {current_field_code}\n")
@@ -578,6 +584,13 @@ def auto_link_by_field_code(filename, username):
             neighbor_img = review_data['images'][neighbor_filename]
             neighbor_review = neighbor_img['review']
             neighbor_source = neighbor_img['source']
+
+            # Skip excluded images
+            if neighbor_review.get('status') == 'excluded':
+                sys.stderr.write(f"  [{idx}] {neighbor_filename}: EXCLUDED, skipping\n")
+                sys.stderr.flush()
+                break
+
             neighbor_field_code = neighbor_review.get('field_code') or neighbor_source.get('field_code')
 
             sys.stderr.write(f"  [{idx}] {neighbor_filename}: {neighbor_field_code}\n")
@@ -604,6 +617,13 @@ def auto_link_by_field_code(filename, username):
                     prev_img = review_data['images'][prev_filename]
                     prev_review = prev_img['review']
                     prev_source = prev_img['source']
+
+                    # Skip excluded images
+                    if prev_review.get('status') == 'excluded':
+                        sys.stderr.write(f"  [{prev_idx}] {prev_filename}: EXCLUDED, stopping\n")
+                        sys.stderr.flush()
+                        break
+
                     prev_field_code = prev_review.get('field_code') or prev_source.get('field_code')
 
                     sys.stderr.write(f"  [{prev_idx}] {prev_filename}: {prev_field_code}\n")
@@ -636,6 +656,13 @@ def auto_link_by_field_code(filename, username):
             neighbor_img = review_data['images'][neighbor_filename]
             neighbor_review = neighbor_img['review']
             neighbor_source = neighbor_img['source']
+
+            # Skip excluded images
+            if neighbor_review.get('status') == 'excluded':
+                sys.stderr.write(f"  [{idx}] {neighbor_filename}: EXCLUDED, stopping\n")
+                sys.stderr.flush()
+                break
+
             neighbor_field_code = neighbor_review.get('field_code') or neighbor_source.get('field_code')
 
             sys.stderr.write(f"  [{idx}] {neighbor_filename}: {neighbor_field_code}\n")
@@ -666,6 +693,13 @@ def auto_link_by_field_code(filename, username):
             neighbor_img = review_data['images'][neighbor_filename]
             neighbor_review = neighbor_img['review']
             neighbor_source = neighbor_img['source']
+
+            # Skip excluded images
+            if neighbor_review.get('status') == 'excluded':
+                sys.stderr.write(f"  [{idx}] {neighbor_filename}: EXCLUDED, stopping\n")
+                sys.stderr.flush()
+                break
+
             neighbor_field_code = neighbor_review.get('field_code') or neighbor_source.get('field_code')
 
             sys.stderr.write(f"  [{idx}] {neighbor_filename}: {neighbor_field_code}\n")
@@ -977,6 +1011,42 @@ def api_review_image(filename):
         'review': review,
         'nav': nav,
         'summary': review_data['review_summary']
+    })
+
+
+@app.route('/api/image/<path:filename>/reset', methods=['POST'])
+@requires_auth
+def api_reset_review(filename):
+    """Reset review data for an image, marking it as unreviewed."""
+    username = get_current_user()
+
+    if filename not in review_data['images']:
+        return jsonify({'error': 'Image not found'}), 404
+
+    # Verify user has claim
+    claim = get_claim(filename)
+    if claim and claim['user'] != username:
+        return jsonify({
+            'error': f'Image is claimed by {claim["user"]}',
+            'claimed_by': claim['user']
+        }), 409
+
+    img = review_data['images'][filename]
+    review = img['review']
+
+    # Clear review status and related fields
+    review['status'] = None
+    review['mo_observation_id'] = None
+    review['mo_image_id'] = None
+    review['mo_observation_url'] = None
+    review['reviewed_at'] = None
+    review['reviewer'] = None
+
+    save_data()
+
+    return jsonify({
+        'success': True,
+        'review': review
     })
 
 
