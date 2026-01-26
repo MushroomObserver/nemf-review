@@ -715,6 +715,7 @@
                             <div><strong>Date:</strong> <span id="peekDate">-</span></div>
                             <div><strong>Location:</strong> <span id="peekLocation">-</span></div>
                             <div><strong>ID:</strong> <span id="peekName">-</span></div>
+                            <div><strong>Claim:</strong> <span id="peekClaimStatus">-</span></div>
                         </div>
                         <div class="peek-actions">
                             <button class="btn-link" onclick="linkFromPeek()">
@@ -1651,6 +1652,18 @@
             document.getElementById('peekDate').textContent = data.source.date || '(none)';
             document.getElementById('peekLocation').textContent = data.source.location || '(none)';
             document.getElementById('peekName').textContent = data.source.name || '(none)';
+
+            // Update claim status
+            const peekClaimStatus = document.getElementById('peekClaimStatus');
+            if (data.claim && data.claim.claimed_by) {
+                if (data.claim.is_mine) {
+                    peekClaimStatus.innerHTML = '<span style="color: #4ecca3;">You have this</span>';
+                } else {
+                    peekClaimStatus.innerHTML = `<span style="color: #ff6b6b;">Claimed by ${data.claim.claimed_by}</span>`;
+                }
+            } else {
+                peekClaimStatus.textContent = 'Unclaimed';
+            }
 
             // Show peeked image in main view temporarily
             document.getElementById('mainImage').src = `/images/${encodeURIComponent(filename)}`;

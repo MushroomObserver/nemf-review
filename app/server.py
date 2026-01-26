@@ -208,6 +208,18 @@ def release_claim(filename, username):
     return False
 
 
+def release_all_claims(username):
+    """Release all claims held by a user."""
+    with claims_lock:
+        filenames_to_release = [
+            filename for filename, claim in claims.items()
+            if claim['user'] == username
+        ]
+        for filename in filenames_to_release:
+            del claims[filename]
+        return len(filenames_to_release)
+
+
 def try_claim_multiple(filenames, username):
     """
     Try to claim multiple images (for linking).
@@ -512,6 +524,229 @@ def api_images():
     return jsonify(result)
 
 
+def auto_link_by_field_code(filename, username):
+    """
+    Automatically link alphabetically neighboring images with matching field slip codes.
+    Checks images that come immediately before/after alphabetically and creates
+    bidirectional links if they have the same field_code.
+    Also claims the linked images for the user.
+    """
+    import sys
+    sys.stderr.write(f"\n--- Auto-link check for: {filename} ---\n")
+    sys.stderr.flush()
+
+    if filename not in review_data['images']:
+        sys.stderr.write(f"Image not found in review_data\n")
+        sys.stderr.flush()
+        return
+
+    current_img = review_data['images'][filename]
+    current_review = current_img['review']
+    current_source = current_img['source']
+
+    # Get current image's field code (prefer review over source)
+    current_field_code = current_review.get('field_code') or current_source.get('field_code')
+    sys.stderr.write(f"Current field code: {current_field_code}\n")
+    sys.stderr.flush()
+
+    # Get alphabetically sorted filenames
+    all_filenames = sorted(review_data['images'].keys())
+    try:
+        current_index = all_filenames.index(filename)
+    except ValueError:
+        sys.stderr.write(f"Filename not in sorted list\n")
+        sys.stderr.flush()
+        return
+
+    neighbors = []
+    MAX_RUN = 5
+    reference_field_code = current_field_code  # The field code to match against
+
+    # If current image has no field code, search backward to find one
+    if not current_field_code:
+        sys.stderr.write(f"No field code on current image, searching backward...\n")
+        sys.stderr.flush()
+
+        for i in range(1, MAX_RUN + 1):
+            idx = current_index - i
+            if idx < 0:
+                break
+            neighbor_filename = all_filenames[idx]
+            if neighbor_filename not in review_data['images']:
+                break
+
+            neighbor_img = review_data['images'][neighbor_filename]
+            neighbor_review = neighbor_img['review']
+            neighbor_source = neighbor_img['source']
+            neighbor_field_code = neighbor_review.get('field_code') or neighbor_source.get('field_code')
+
+            sys.stderr.write(f"  [{idx}] {neighbor_filename}: {neighbor_field_code}\n")
+            sys.stderr.flush()
+
+            if neighbor_field_code:
+                # Found a field code! Use it as reference
+                reference_field_code = neighbor_field_code
+                sys.stderr.write(f"Found reference field code: {reference_field_code}\n")
+                sys.stderr.flush()
+
+                # Continue backward to find more with same field code
+                sys.stderr.write(f"Continuing backward from {idx} to find more with {reference_field_code}...\n")
+                sys.stderr.flush()
+                start_idx = idx  # Track where the run of matching field codes starts
+                for k in range(1, MAX_RUN - i + 1):  # Adjust range to stay within MAX_RUN total
+                    prev_idx = idx - k
+                    if prev_idx < 0:
+                        break
+                    prev_filename = all_filenames[prev_idx]
+                    if prev_filename not in review_data['images']:
+                        break
+
+                    prev_img = review_data['images'][prev_filename]
+                    prev_review = prev_img['review']
+                    prev_source = prev_img['source']
+                    prev_field_code = prev_review.get('field_code') or prev_source.get('field_code')
+
+                    sys.stderr.write(f"  [{prev_idx}] {prev_filename}: {prev_field_code}\n")
+                    sys.stderr.flush()
+
+                    if prev_field_code != reference_field_code:
+                        break
+
+                    start_idx = prev_idx  # Update start of run
+
+                # Add all images from start_idx to current (exclusive of current)
+                for j in range(start_idx, current_index):
+                    neighbors.append(all_filenames[j])
+
+                break  # Stop searching once we found and processed a field code
+
+    else:
+        # Current image HAS a field code - walk backward looking for matches
+        sys.stderr.write(f"Walking backward from index {current_index}...\n")
+        sys.stderr.flush()
+        backward_neighbors = []
+        for i in range(1, MAX_RUN + 1):
+            idx = current_index - i
+            if idx < 0:
+                break
+            neighbor_filename = all_filenames[idx]
+            if neighbor_filename not in review_data['images']:
+                break
+
+            neighbor_img = review_data['images'][neighbor_filename]
+            neighbor_review = neighbor_img['review']
+            neighbor_source = neighbor_img['source']
+            neighbor_field_code = neighbor_review.get('field_code') or neighbor_source.get('field_code')
+
+            sys.stderr.write(f"  [{idx}] {neighbor_filename}: {neighbor_field_code}\n")
+            sys.stderr.flush()
+
+            # Stop if field code doesn't match
+            if neighbor_field_code != current_field_code:
+                break
+
+            backward_neighbors.append(neighbor_filename)
+
+        # Reverse so they're in alphabetical order
+        backward_neighbors.reverse()
+        neighbors = backward_neighbors
+
+    # Walk forward - if we have a reference field code, link images that match or have no code
+    if reference_field_code:
+        sys.stderr.write(f"Walking forward from index {current_index} (reference: {reference_field_code})...\n")
+        sys.stderr.flush()
+        for i in range(1, MAX_RUN + 1):
+            idx = current_index + i
+            if idx >= len(all_filenames):
+                break
+            neighbor_filename = all_filenames[idx]
+            if neighbor_filename not in review_data['images']:
+                break
+
+            neighbor_img = review_data['images'][neighbor_filename]
+            neighbor_review = neighbor_img['review']
+            neighbor_source = neighbor_img['source']
+            neighbor_field_code = neighbor_review.get('field_code') or neighbor_source.get('field_code')
+
+            sys.stderr.write(f"  [{idx}] {neighbor_filename}: {neighbor_field_code}\n")
+            sys.stderr.flush()
+
+            # Include if: no field code OR field code matches reference
+            if neighbor_field_code and neighbor_field_code != reference_field_code:
+                # Different field code - stop
+                break
+
+            neighbors.append(neighbor_filename)
+    else:
+        sys.stderr.write(f"No reference field code found, skipping forward search\n")
+        sys.stderr.flush()
+
+    sys.stderr.write(f"Found {len(neighbors)} neighbors in run: {neighbors}\n")
+    sys.stderr.flush()
+
+    # Get current linked images
+    current_linked = current_review.get('linked_images', [])
+    sys.stderr.write(f"Currently linked: {current_linked}\n")
+    sys.stderr.flush()
+
+    links_created = False
+    newly_linked = []  # Track newly linked neighbors for claiming
+
+    # Link all neighbors in the run
+    for neighbor_filename in neighbors:
+        sys.stderr.write(f"  Processing: {neighbor_filename}\n")
+        sys.stderr.flush()
+
+        # Skip if already linked
+        if neighbor_filename in current_linked:
+            sys.stderr.write(f"    Already linked, skipping\n")
+            sys.stderr.flush()
+            continue
+
+        neighbor_img = review_data['images'][neighbor_filename]
+        neighbor_review = neighbor_img['review']
+
+        sys.stderr.write(f"    Creating bidirectional link\n")
+        sys.stderr.flush()
+
+        # Add neighbor to current image's links
+        if neighbor_filename not in current_linked:
+            current_linked.append(neighbor_filename)
+            newly_linked.append(neighbor_filename)
+            links_created = True
+
+        # Add current to neighbor's links (bidirectional)
+        neighbor_linked = neighbor_review.get('linked_images', [])
+        if filename not in neighbor_linked:
+            neighbor_linked.append(filename)
+            neighbor_review['linked_images'] = neighbor_linked
+
+    # Update current image's linked_images
+    if links_created:
+        current_review['linked_images'] = current_linked
+
+    # Claim newly linked images
+    if newly_linked:
+        sys.stderr.write(f"Attempting to claim newly linked images: {newly_linked}\n")
+        sys.stderr.flush()
+        success, failed_claims = try_claim_multiple(newly_linked, username)
+        if success:
+            sys.stderr.write(f"Successfully claimed all linked images\n")
+            sys.stderr.flush()
+        else:
+            sys.stderr.write(f"Failed to claim some images: {failed_claims}\n")
+            sys.stderr.flush()
+
+    # Save changes if any links were made
+    if links_created:
+        sys.stderr.write(f"Saving data with links: {current_linked}\n")
+        sys.stderr.flush()
+        save_data()
+    else:
+        sys.stderr.write(f"No links created\n")
+        sys.stderr.flush()
+
+
 @app.route('/api/image/<path:filename>')
 @requires_auth
 def api_image(filename):
@@ -528,7 +763,34 @@ def api_image(filename):
 
     # Only claim the image if actually loading it for review (not peeking)
     if add_to_history:
+        import sys
+
+        # Check if we already claim this image
+        existing_claim = get_claim(filename)
+        already_claimed = existing_claim and existing_claim['user'] == username
+
+        if not already_claimed:
+            # Switching to a new image - release all existing claims
+            released_count = release_all_claims(username)
+            sys.stderr.write(f"Switching to new image - released {released_count} existing claims\n")
+            sys.stderr.flush()
+
+        # Claim the new image
         success, message, claimed_by = try_claim(filename, username)
+
+        # Claim all pre-existing linked images
+        if success and filename in review_data['images']:
+            linked_images = review_data['images'][filename]['review'].get('linked_images', [])
+            if linked_images:
+                sys.stderr.write(f"Claiming {len(linked_images)} pre-existing linked images: {linked_images}\n")
+                sys.stderr.flush()
+                link_success, failed_claims = try_claim_multiple(linked_images, username)
+                if not link_success:
+                    sys.stderr.write(f"Failed to claim some linked images: {failed_claims}\n")
+                    sys.stderr.flush()
+
+        # Auto-link neighboring images with matching field slip codes (also claims them)
+        auto_link_by_field_code(filename, username)
     else:
         # Just check current claim status without claiming
         claim = get_claim(filename)
@@ -841,6 +1103,9 @@ def api_unlink_image(filename):
         target_linked.remove(filename)
         target_review['linked_images'] = target_linked
 
+    # Release claim on the unlinked target image
+    release_claim(target_filename, username)
+
     save_data()
 
     return jsonify({
@@ -861,6 +1126,7 @@ def api_next_unreviewed():
     sys.stderr.write(f"DEBUG: /api/next-unreviewed called by {username}\n")
     sys.stderr.flush()
 
+    # Note: Claims will be released automatically in api_image when loading the new image
     filename = get_next_unreviewed_for_user(username)
 
     sys.stderr.write(f"DEBUG: get_next_unreviewed_for_user returned: {filename}\n")
