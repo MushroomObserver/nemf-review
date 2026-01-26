@@ -954,14 +954,16 @@ def api_lookup_name():
                             'match': 'candidate'
                         })
 
-    # Sort results to prioritize higher-level taxa (genus) before species
+    # Sort results to prioritize exact matches, then higher-level taxa
     # Count words in text_name: 1 word = genus, 2 = species, 3+ = subspecies
     def sort_key(item):
         text_name = item['text_name']
         word_count = len(text_name.split())
-        # Sort by (word_count, alphabetically)
-        # This puts genus (1 word) first, then species (2 words), etc.
-        return (word_count, text_name.lower())
+        # Check for exact match (case-insensitive)
+        is_exact = text_name.lower() == query_lower
+        # Sort by (not exact, word_count, alphabetically)
+        # This puts exact matches first, then genus (1 word), species (2), etc.
+        return (not is_exact, word_count, text_name.lower())
 
     results.sort(key=sort_key)
 
