@@ -668,6 +668,15 @@
                 <div style="margin-top: 15px;">
                     <button class="btn-search-mo" onclick="searchMO()" style="width: 100%;">🔍 Search MO</button>
                 </div>
+
+                <!-- iNaturalist ID -->
+                <div style="margin-top: 15px;">
+                    <label style="font-size: 11px; color: #888; text-transform: uppercase;">iNaturalist ID</label>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="text" id="inatId" placeholder="Enter iNat ID" style="flex: 1; padding: 8px; background: #0f0f23; border: 1px solid #333; border-radius: 4px; color: #fff; font-size: 13px;">
+                        <button class="btn-search-mo" onclick="openINat()" style="padding: 8px 12px;">Open iNat</button>
+                    </div>
+                </div>
                     </div>
                 </div>
 
@@ -1145,6 +1154,26 @@
             }
 
             const url = `${MO_BASE_URL}/observations?${params.toString()}`;
+            window.open(url, '_blank');
+        }
+
+        function openINat() {
+            const inatId = document.getElementById('inatId').value.trim();
+
+            if (!inatId) {
+                alert('Please enter an iNaturalist ID.');
+                return;
+            }
+
+            // Remove any non-numeric characters
+            const numericId = inatId.replace(/\D/g, '');
+
+            if (!numericId) {
+                alert('Please enter a valid numeric iNaturalist ID.');
+                return;
+            }
+
+            const url = `https://www.inaturalist.org/observations/${numericId}`;
             window.open(url, '_blank');
         }
 
